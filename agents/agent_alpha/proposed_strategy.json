@@ -1,0 +1,10 @@
+{
+  "agent": "agent_alpha",
+  "new_parameters": {
+    "buy_rsi_threshold": 40,
+    "sell_rsi_threshold": 70,
+    "require_bullish_trend": false
+  },
+  "reason": null,
+  "timestamp": 1772909542.323937
+}
