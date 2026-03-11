@@ -14,7 +14,6 @@ class AggressiveMomentumStrategy(BaseStrategy):
     특징:
     - 높은 회전율 (매수/매도 빈번) → 수수료 부담 있으나 수익 기회 극대화
     - 추세 무관 진입 → 강한 하락장에서 손실 위험이 있으나 반등 기회도 포착
-    - Alpha 대비 2배 넓은 매수 구간, 더 빠른 익절
     """
 
     def __init__(self, params: dict = None):

@@ -31,26 +31,6 @@ _pending_confirm = {}
 # 대기 중인 에이전트 선택 요청 (chat_id → {ticker, price, agents: list})
 _pending_agent_select = {}
 
-async def cmd_add_investor(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    chat_id = str(update.effective_chat.id)
-    if chat_id != AUTHORIZED_CHAT_ID: return
-    params = {}
-    if context.args:
-        arg_str = " ".join(context.args).lower()
-        if "모멘텀" in arg_str or "rsi" in arg_str:
-            params["strategy"] = "rsi_momentum"
-        elif "볼린저" in arg_str or "평균회귀" in arg_str:
-            params["strategy"] = "bollinger_reversion"
-        elif "브레이크아웃" in arg_str or "돌파" in arg_str:
-            params["strategy"] = "breakout"
-            
-    _pending_confirm[chat_id] = {
-        "action": "execute_and_restart",
-        "commands": ["add_investor"],
-        "params": params,
-    }
-    await context.bot.send_message(chat_id=chat_id, text="📋 다음 명령을 실행하고 시스템을 재시작합니다:\n• add_investor\n\n'확인' 또는 '취소'로 응답해주세요.")
-
 
 async def cmd_rebalance(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = str(update.effective_chat.id)
@@ -255,7 +235,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     help_text = """안녕하세요! Project Hermes의 Manager 입니다.
 
 명령어 안내:
-/add_investor — 새 투자 에이전트를 추가합니다 (beta 기능)
 /rebalance — 성과 기반 자본 재배분을 실행합니다
 /status — 전체 포트폴리오 현황을 조회합니다
 /status [에이전트명] — 특정 에이전트의 포트폴리오 현황을 조회합니다 (예: /status alpha)
@@ -496,7 +475,6 @@ if __name__ == '__main__':
     
     application.add_handler(CommandHandler('start', start))
     application.add_handler(CommandHandler('help', help_command))
-    application.add_handler(CommandHandler('add_investor', cmd_add_investor))
     application.add_handler(CommandHandler('rebalance', cmd_rebalance))
     application.add_handler(CommandHandler('status', cmd_status))
     application.add_handler(CommandHandler('restart', cmd_restart))

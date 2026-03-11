@@ -3,9 +3,9 @@ import pandas as pd
 import json
 
 
-class PullbackReversalStrategy(BaseStrategy):
+class PullbackTrendStrategy(BaseStrategy):
     """
-    Pullback Reversal 전략
+    Pullback Trend 전략
 
     구조
     - Trend filter
@@ -21,16 +21,22 @@ class PullbackReversalStrategy(BaseStrategy):
         default = self.get_default_params()
         if params:
             default.update(params)
-        super().__init__("Pullback Reversal", default)
+        super().__init__("PullbackTrend", default)
 
     def get_default_params(self) -> dict:
         return {
-            "setup_rsi_threshold": 40,
-            "entry_rsi_threshold": 45,
-            "bb_position_threshold": 0.4,
-            "require_bullish_trend": True,
+            "regime": "bullish",
+            "setup": {
+                "timeframe": "1h",
+                "rsi_threshold": 40,
+                "bb_position_threshold": 0.4,
+            },
+            "entry": {
+                "timeframe": "15m",
+                "rsi_threshold": 45,
+                "volume_multiplier": 1.3,
+            },
             "position_size_ratio": 0.3,
-            "volume_multiplier": 1.3
         }
 
     def evaluate(
@@ -38,7 +44,8 @@ class PullbackReversalStrategy(BaseStrategy):
         ticker: str,
         setup_market_data: pd.DataFrame,
         entry_market_data: pd.DataFrame,
-        portfolio_info: dict = None
+        regime: str,
+        portfolio_info: dict = {},
     ) -> Signal:
 
         # === Entry timeframe 데이터 ===
@@ -52,27 +59,8 @@ class PullbackReversalStrategy(BaseStrategy):
         # === Setup timeframe 데이터 ===
         rsi_setup = float(setup_market_data.rsi_14.iloc[-1])
         ma20 = float(setup_market_data.ma_20.iloc[-1])
-        ma50 = float(setup_market_data.ma_50.iloc[-1])
         bb_pos = float(setup_market_data.bb_position.iloc[-1])
         setup_price = float(setup_market_data.close.iloc[-1])
-
-        # === Trend 판단 ===
-        trend = "ranging"
-        if ma20 > ma50 * 1.01:
-            trend = "bullish"
-        elif ma20 < ma50 * 0.99:
-            trend = "bearish"
-
-        require_bullish = self.params["require_bullish_trend"]
-        position_ratio = self.params["position_size_ratio"]
-        # === Trend Filter ===
-        if require_bullish and trend != "bullish":
-            return Signal(
-                type=SignalType.HOLD,
-                ticker=ticker,
-                reason=f"추세 {trend} → 매수 금지",
-                strength=0.0
-            )
 
         # === Setup 조건 ===
         setup_ok = (
@@ -86,34 +74,39 @@ class PullbackReversalStrategy(BaseStrategy):
                 type=SignalType.HOLD,
                 ticker=ticker,
                 reason=f"Setup 미충족 (RSI {rsi_setup:.1f}, BB {bb_pos:.2f})",
-                strength=0.0
+                strength=0.0,
             )
 
         # === Entry trigger ===
-        rsi_cross_trigger = rsi_entry > self.params["entry_rsi_threshold"] and prev_rsi_entry <= self.params["entry_rsi_threshold"]
+        rsi_cross_trigger = (
+            rsi_entry > self.params["entry_rsi_threshold"]
+            and prev_rsi_entry <= self.params["entry_rsi_threshold"]
+        )
         ma_cross = prev_price <= prev_ma9 and current_price > ma9
-        volume_trigger = entry_market_data.volume.iloc[-1] > entry_market_data.volume_ma20.iloc[-1] * self.params["volume_multiplier"]
+        volume_trigger = (
+            entry_market_data.volume.iloc[-1]
+            > entry_market_data.volume_ma20.iloc[-1] * self.params["volume_multiplier"]
+        )
 
         if rsi_cross_trigger and ma_cross and volume_trigger:
 
-            strength = min(
-                position_ratio * (1 + (50 - rsi_setup) / 50),
-                1.0
-            )
+            strength = min(1 + (50 - rsi_setup) / 50, 1.0)
 
             return Signal(
                 type=SignalType.BUY,
                 ticker=ticker,
                 reason=(
-                    f"Pullback + Reversal "
+                    f"Pullback + Trend "
                     f"(RSI_setup {rsi_setup:.1f}, RSI_entry {rsi_entry:.1f})"
                 ),
-                strength=strength
+                strength=strength,
             )
 
         # === Exit ===
         rsi_sell = rsi_entry > 65
-        bb_upper_touch = entry_market_data.close.iloc[-1] > entry_market_data.bb_upper.iloc[-1]
+        bb_upper_touch = (
+            entry_market_data.close.iloc[-1] > entry_market_data.bb_upper.iloc[-1]
+        )
 
         if rsi_sell or bb_upper_touch:
 
@@ -123,20 +116,20 @@ class PullbackReversalStrategy(BaseStrategy):
                 type=SignalType.SELL,
                 ticker=ticker,
                 reason=f"RSI {rsi_entry:.1f} 과매수 또는 BB 상단 터치",
-                strength=strength
+                strength=strength,
             )
 
         return Signal(
             type=SignalType.HOLD,
             ticker=ticker,
             reason="Setup 유지 중, Entry 대기",
-            strength=0.0
+            strength=0.0,
         )
 
     def get_strategy_description(self) -> str:
         p = self.params
         p_json = json.dumps(p, ensure_ascii=False, indent=2)
-        return f"""# 📉 Pullback Reversal 전략
+        return f"""# 📉 PullbackTrend 전략
 
 ## 전략 개요
 상승장에서 눌림(pullback) 구간을 찾은 뒤
@@ -145,25 +138,38 @@ class PullbackReversalStrategy(BaseStrategy):
 ## 매매 규칙
 
 ### Setup (눌림 확인)
-- RSI < {p['setup_rsi_threshold']}
-- BB position < {p['bb_position_threshold']}
+- RSI < 40
+- BB position < 0.4
 - price < MA20
 
 ### Entry (반등 시작)
-- RSI > {p['entry_rsi_threshold']}
+- RSI > 45
 - price crosses MA9
-- volume > MA20 volume * {p['volume_multiplier']}
+- volume > MA20 volume * 1.3
 
 ### Exit
 - RSI > 65
 - BB upper 터치
 
 ### 포지션 크기
-가용 현금의 {p['position_size_ratio']:.0%}
+가용 현금의 30%
 
 ## 현재 파라미터
 ```json
-{{"setup_rsi_threshold": {p.get('setup_rsi_threshold', 40)}, "entry_rsi_threshold": {p.get('entry_rsi_threshold', 45)}, "bb_position_threshold": {p.get('bb_position_threshold', 0.4)}, "require_bullish_trend": {str(p.get('require_bullish_trend', True)).lower()}, "position_size_ratio": {p.get('position_size_ratio', 0.3)}, "volume_multiplier": {p.get('volume_multiplier', 1.3)}}}
+{{
+    "regime": "bullish",
+    "setup": {{
+        "timeframe": "1h",
+        "rsi_threshold": 40,
+        "bb_position_threshold": 0.4
+    }},
+    "entry": {{
+        "timeframe": "15m",
+        "rsi_threshold": 45,
+        "volume_multiplier": 1.3
+    }},
+    "position_size_ratio": 0.3
+}}
 ```
 ### 장점
 - 눌림 매수로 리스크 감소

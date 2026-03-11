@@ -1,4 +1,4 @@
-# 📉 Pullback Reversal 전략
+# 📉 PullbackTrend 전략
 
 ## 전략 개요
 상승장에서 눌림(pullback) 구간을 찾은 뒤
@@ -25,7 +25,20 @@
 
 ## 현재 파라미터
 ```json
-{"setup_rsi_threshold": 40, "entry_rsi_threshold": 45, "bb_position_threshold": 0.4, "require_bullish_trend": true, "position_size_ratio": 0.3, "volume_multiplier": 1.3}
+{
+    "regime": "bullish",
+    "setup": {
+        "timeframe": "1h",
+        "rsi_threshold": 40,
+        "bb_position_threshold": 0.4
+    },
+    "entry": {
+        "timeframe": "15m",
+        "rsi_threshold": 45,
+        "volume_multiplier": 1.3
+    },
+    "position_size_ratio": 0.3
+}
 ```
 ### 장점
 - 눌림 매수로 리스크 감소
