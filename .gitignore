@@ -1,2 +1,8 @@
 venv/
 .env
+*.log
+*.pyc
+__pycache__/
+portfolio.md
+current_portfolio.md
+
