@@ -2,16 +2,18 @@ import os
 import json
 from src.agents.base_agent import BaseAgent
 from src.utils.markdown_io import read_markdown, write_markdown
-from src.utils.gemini_client import get_gemini_client
 from src.utils.telegram_notifier import TelegramNotifier
 from src.utils.logger import logger
+
+from src.utils.llm_client import get_llm_client
+from src.utils.gemini_client import get_gemini_client
 
 class ManagerAgent(BaseAgent):
     def __init__(self, portfolio_manager=None, prompt_path: str = "rules/prompt_manager_agent.md"):
         super().__init__("Manager", prompt_path)
         
-        # Manager는 Gemini API 사용
-        self.llm = get_gemini_client()
+        # Manager는 llm API 사용
+        self.llm = get_llm_client()
         self.notifier = TelegramNotifier()
         
         self.portfolio_path = "manager/current_portfolio.md"

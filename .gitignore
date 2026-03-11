@@ -1,2 +1,7 @@
 venv/
 .env
+*.log
+*.pyc
+portfolio.md
+current_portfolio.md
+
