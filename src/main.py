@@ -43,7 +43,7 @@ def get_upbit_krw_balance() -> float:
     return 1000000.0
 
 
-def refresh_target_coins():
+def update_target_coins():
     global TARGET_COINS
     logger.info("--- [System] 동적 대상 코인 선정 프로세스 시작 ---")
     broker = UpbitBroker()
@@ -53,8 +53,8 @@ def refresh_target_coins():
     logger.info(f"--- [System] 현재 타겟 코인: {TARGET_COINS} ---")
 
 
-def run_high_frequency_loop(manager: ManagerAgent):
-    logger.info("--- [System] Running High Frequency Loop (Every 3 min) ---")
+def execute_trading_cycle(manager: ManagerAgent):
+    logger.info("--- [System] Running Trading Cycle (Every 3 min) ---")
 
     # 매수/매도 대상을 추리기 위해 타겟 코인 + 현재 보유 코인 통합
     broker = UpbitBroker()
@@ -99,21 +99,19 @@ def run_high_frequency_loop(manager: ManagerAgent):
     logger.info("--- [System] High Frequency Loop Completed ---")
 
 
-def run_daily_sync(pm, manager, notifier):
-    logger.info("--- Running Daily Loop (Midnight) ---")
-    logger.info("[Shadow Agent] Performing daily audit...")
-    refresh_target_coins()
+def execute_daily_sync(pm, manager, notifier):
+    logger.info("--- Running Daily Sync Loop (Midnight) ---")
+    logger.info("[Manager] Performing daily audit...")
+    update_target_coins()
     try:
-        from src.main import sync_real_balances
-
-        sync_result = sync_real_balances(pm, manager, notifier)
+        sync_result = synchronize_balances(pm, manager, notifier)
         notifier.send_message(sync_result)
     except Exception as e:
         logger.error(f"Daily sync error: {e}")
 
 
-def sync_real_balances(pm, manager, notifier) -> str:
-    """업비트 실제 잔고를 읽어 포트폴리오(현금, 자산 등)를 1원 단위까지 100% 동기화하고 재배분합니다."""
+def synchronize_balances(pm, manager, notifier) -> str:
+    """업비트 실잔고 기반 포트폴리오 100% 동기화 및 재배분 실행"""
     logger.info("[System] 🔄 업비트 실잔고 기반 포트폴리오 동기화 실행 중...")
 
     try:
@@ -193,8 +191,8 @@ def sync_real_balances(pm, manager, notifier) -> str:
         pm.portfolios[agent_name]["cash"] = required_cash
 
         # 4. 저장 및 MD 업데이트
-        pm._save_state()
-        pm._update_portfolio_md(agent_name)
+        pm.save_state()
+        pm.export_portfolio_report(agent_name)
 
         msg = (
             f"✅ **실계좌 동기화 100% 완료**\n\n"
@@ -220,8 +218,8 @@ def main():
     notifier = TelegramNotifier()
     logger.info(f"📱 텔레그램 알림 초기화 완료")
 
-    # 1. 실제 Upbit KRW 잔고 기반 포트폴리오 매니저 초기화
-    refresh_target_coins()
+    # 1. 포트폴리오 매니저 초기화
+    update_target_coins()
     total_capital = get_upbit_krw_balance()
     pm = PortfolioManager(total_capital=total_capital)
 
@@ -232,24 +230,24 @@ def main():
     else:
         logger.info(f"💰 기존 포트폴리오 상태 복원 완료")
         for name in pm.portfolios:
-            s = pm.get_summary(name)
+            s = pm.get_portfolio_summary(name)
             logger.info(
                 f"  - {name}: 현금 {s['cash']:,.0f} KRW, 수익률 {s['return_rate']:+.2f}%"
             )
 
-    # 2. 전략 객체 및 Manager 초기화
+    # 2. 투자 매니저 및 전략 객체 초기화
     manager = ManagerAgent("manager", portfolio_manager=pm)
-    pm._update_portfolio_md("manager")
+    pm.export_portfolio_report("manager")
 
     # 5. 스레드 풀 초기화
     executor = concurrent.futures.ThreadPoolExecutor(max_workers=5)
 
     # Schedule Jobs
     logger.info(f"⏰ 스케줄러 시작")
-    schedule.every(3).minutes.do(run_high_frequency_loop, manager=manager)
+    schedule.every(3).minutes.do(execute_trading_cycle, manager=manager)
 
     schedule.every().day.at("00:00").do(
-        run_daily_sync, pm=pm, manager=manager, notifier=notifier
+        execute_daily_sync, pm=pm, manager=manager, notifier=notifier
     )
 
     # 텔레그램 명령 큐 처리 (30초마다)
@@ -266,8 +264,8 @@ def main():
     telegram_thread = threading.Thread(target=run_telegram_listener, daemon=True)
     telegram_thread.start()
 
-    # 첫 사이클 즉시 실행 (스케줄러 대기 없이)
-    run_high_frequency_loop(manager=manager)
+    # 첫 사이클 즉시 실행
+    execute_trading_cycle(manager=manager)
 
     while True:
         schedule.run_pending()

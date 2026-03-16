@@ -109,9 +109,9 @@ class CommandQueueHandler:
 
     def _handle_sync(self, params):
         """업비트 실계좌 잔고를 동기화합니다."""
-        from src.main import sync_real_balances
+        from src.main import synchronize_balances
 
-        sync_result = sync_real_balances(self.pm, self.manager, self.notifier)
+        sync_result = synchronize_balances(self.pm, self.manager, self.notifier)
         self.notifier.send_message(sync_result)
 
     def _handle_halt(self, params):
@@ -155,7 +155,7 @@ class CommandQueueHandler:
         target_agent = "manager"
 
         if target_agent in pm.portfolios:
-            s = pm.get_summary(target_agent)
+            s = pm.get_portfolio_summary(target_agent)
             msg = f"📊 *포트폴리오 상세 현황 ({target_agent})*\n\n"
 
             is_halted = pm.is_halted(target_agent)

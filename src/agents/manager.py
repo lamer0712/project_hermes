@@ -42,7 +42,7 @@ class ManagerAgent(BaseAgent):
         # 포트폴리오 정보도 상태에 포함
         portfolio_info = ""
         if self.portfolio_manager:
-            summary = self.portfolio_manager.get_summary(self.name)
+            summary = self.portfolio_manager.get_portfolio_summary(self.name)
             if summary:
                 portfolio_info = f"\n\n--- Portfolio ---\nCash: {summary['cash']:,.0f} KRW\nTotal Value: {summary['total_value']:,.0f} KRW\nReturn: {summary['return_rate']:+.2f}%"
 
@@ -82,7 +82,7 @@ class ManagerAgent(BaseAgent):
 
         portfolio_info = None
         if self.portfolio_manager:
-            portfolio_info = self.portfolio_manager.get_portfolio_info(self.name)
+            portfolio_info = self.portfolio_manager.get_portfolio_summary(self.name)
             available_cash = self.portfolio_manager.get_available_cash(self.name)
             holdings = self.portfolio_manager.get_holdings(self.name)
         else:
