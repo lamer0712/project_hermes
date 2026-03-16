@@ -72,10 +72,9 @@ class ManagerAgent:
             current_price = float(market_data.close.iloc[-1])
 
             # 종목별 Regime 판독 및 전략 할당
-            ticker_setup_df = setup_market_data.get(ticker)
             ticker_regime = None
-            if ticker_setup_df is not None and not ticker_setup_df.empty:
-                ticker_regime = self.broker.regime_detect(ticker_setup_df)
+            if market_data is not None and not market_data.empty:
+                ticker_regime = self.broker.regime_detect(market_data)
 
             target_strategy_name = self.strategy_map.get(ticker_regime, None)
             if target_strategy_name is None:
@@ -125,11 +124,13 @@ class ManagerAgent:
 
         # 가장 강한 매수 시그널 1개만 실행
         if best_buy and best_buy_strategy:
-            signal, market_data = best_buy
-            ticker = market_data.get("ticker", "Unknown")
-            current_price = float(market_data.get("current_price", 0.0))
-            logger.info(f"🏆 Best Buy | {best_buy_strategy.name} → {signal}")
-            self._execute_buy(best_buy_strategy.name, ticker, current_price, signal)
+            signal_best, market_data_best = best_buy
+            ticker = signal_best.ticker
+            current_price = float(market_data_best.close.iloc[-1])
+            logger.info(f"🏆 Best Buy | {best_buy_strategy.name} → {signal_best}")
+            self._execute_buy(
+                best_buy_strategy.name, ticker, current_price, signal_best
+            )
 
     def handle_realtime_tick(self, ticker: str, current_price: float) -> None:
         """웹소켓에서 수신한 실시간 틱 데이터를 바탕으로 긴급 손절/익절을 검사합니다."""

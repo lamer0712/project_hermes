@@ -106,39 +106,23 @@ class UpbitMarketData:
         high20 = df.high_20.iloc[-1]
         low20 = df.low_20.iloc[-1]
 
-        volume = df.volume.iloc[-1]
-        vol_ma20 = df.volume_ma20.iloc[-1]
-
         ema_now = df.ema_20.iloc[-1]
         ema_prev = df.ema_20.iloc[-5]
 
         volatility = (high20 - low20) / price
         trend_strength = abs(ma20 - ma60) / ma60
-        ema_slope = (ema_now - ema_prev) / price
-        volume_spike = volume > vol_ma20 * 1.8
+        ema_slope = (ema_now - ema_prev) / ema_prev
 
         # Bullish
-        if (
-            ma20 > ma60 * 1.01
-            and rsi > 55
-            and ema_slope > 0
-            and adx > 20
-            and volume_spike
-        ):
+        if ma20 > ma60 * 1.01 and rsi > 55 and ema_slope > 0 and adx > 18:
             return "bullish"
 
         # Bearish
-        if (
-            ma20 < ma60 * 0.99
-            and rsi < 45
-            and ema_slope < 0
-            and adx > 20
-            and volume_spike
-        ):
+        if ma20 < ma60 * 0.99 and rsi < 45 and ema_slope < 0 and adx > 18:
             return "bearish"
 
-        # Volatile (변동성 크지만 추세 약함)
-        if volatility > 0.07 and trend_strength < 0.02:
+        # Volatile
+        if volatility > 0.05 and trend_strength < 0.02:
             return "volatile"
 
         return "ranging"
@@ -376,7 +360,10 @@ class UpbitMarketData:
             stats.sort(key=lambda x: x["total_score"])
 
             # 상위 N개 마켓명 추출
-            top_coins = {s["market"] for s in stats[:top_n]} | {"KRW-BTC", "KRW-ETH"}
+            top_coins = {s["market"] for s in stats[:top_n]} | {
+                "KRW-BTC",
+                "KRW-ETH",
+            }
 
             logger.info(f"[Market Data API] 동적 대상 코인 선정 완료: {top_coins}")
             return list(top_coins)
