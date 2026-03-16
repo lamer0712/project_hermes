@@ -13,6 +13,7 @@ class SignalType(Enum):
 @dataclass
 class Signal:
     """전략이 반환하는 매매 시그널"""
+
     type: SignalType
     ticker: str
     reason: str
@@ -33,26 +34,30 @@ class BaseStrategy(ABC):
     def __init__(self, name: str, params: dict = None):
         self.name = name
         self.params = params or {}
+        self.regime = params.get("regime", None)
 
     @abstractmethod
-    def evaluate(self, market_data: dict, portfolio_info: dict = None) -> Signal:
+    def evaluate(
+        self,
+        ticker: str,
+        setup_market_data: "pd.DataFrame",
+        entry_market_data: "pd.DataFrame",
+        regime: str,
+        portfolio_info: dict = None,
+    ) -> Signal:
         """
         시장 데이터와 포트폴리오 정보를 바탕으로 매매 시그널을 반환합니다.
 
         Args:
-            market_data: {'ticker', 'current_price', 'rsi_14', 'ma_20', 'ma_50', 
-                          'trend', 'bb_upper', 'bb_lower', 'bb_mid', 
-                          'high_20', 'low_20', 'closes' 등}
-            portfolio_info: {'cash', 'holdings': {ticker: {volume, avg_price}}, 'total_value'}
+            ticker: 종목명
+            setup_market_data: 환경판단용 일/장기 캔들 혹은 DataFrame
+            entry_market_data: 진입/청산용 단기 캔들 DataFrame
+            regime: 감지된 체제
+            portfolio_info: 포트폴리오 메타데이터
 
         Returns:
             Signal 객체
         """
-        pass
-
-    @abstractmethod
-    def get_strategy_description(self) -> str:
-        """전략에 대한 한국어 설명을 반환합니다 (strategy.md용)."""
         pass
 
     def get_default_params(self) -> dict:

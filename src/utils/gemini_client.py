@@ -1,5 +1,6 @@
 import os
 import json
+import time
 from google import genai
 from google.genai import types
 from src.utils.logger import logger
@@ -77,7 +78,6 @@ class GeminiClient:
                 
             except Exception as e:
                 logger.error(f"[Gemini Warning] 실행 오류 또는 파싱 실패: {e}")
-                import time
                 time.sleep(2)
                 
         logger.error("[Gemini Error] 최대 재시도 횟수를 초과했습니다.")

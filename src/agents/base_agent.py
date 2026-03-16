@@ -1,4 +1,3 @@
-import os
 import json
 from src.utils.markdown_io import read_markdown
 from src.utils.llm_client import LocalLLMClient

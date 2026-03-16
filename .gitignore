@@ -5,4 +5,5 @@ venv/
 __pycache__/
 portfolio.md
 current_portfolio.md
+trades.md
 
