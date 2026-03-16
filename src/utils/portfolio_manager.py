@@ -2,7 +2,7 @@ import os
 import json
 import traceback
 from datetime import datetime
-from src.utils.markdown_io import write_markdown, read_markdown
+from src.utils.markdown_io import write_markdown
 from src.utils.telegram_notifier import TelegramNotifier
 from src.utils.logger import logger
 from src.utils.broker_api import UpbitBroker

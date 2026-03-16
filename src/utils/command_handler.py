@@ -6,7 +6,6 @@ import glob
 import traceback
 from src.utils.command_queue import CommandQueue
 from src.utils.broker_api import UpbitBroker
-from src.utils.markdown_io import append_markdown
 from src.utils.logger import logger
 
 
@@ -127,21 +126,15 @@ class CommandQueueHandler:
             self.notifier.send_message(f"❌ *[manager] 거래 재개 설정 실패*")
 
     def _handle_clear(self, params):
-        """로그 및 거래 내역을 정리합니다."""
+        """시스템 로그를 정리합니다."""
         # 1. Clear *.log files
         log_files = glob.glob("*.log")
         for log_file in log_files:
             with open(log_file, "w") as f:
                 pass
 
-        # 2. Clear manager/trades.md files
-        trade_files = glob.glob("manager/trades.md")
-        for trade_file in trade_files:
-            with open(trade_file, "w") as f:
-                f.write("# Trade History\n\n")
-
-        self.notifier.send_message("🧹 *로그 및 거래 내역 정리 완료*")
-        logger.info("[System] Logs and trade history cleared.")
+        self.notifier.send_message("🧹 *시스템 로그 정리 완료*")
+        logger.info("[System] Logs cleared.")
 
     # ──────────────────────────────────────────────
     # 내부 헬퍼 메서드
@@ -299,11 +292,6 @@ class CommandQueueHandler:
 
         if res and "error" not in res:
             self.pm.record_sell(agent_name, ticker, sell_volume, price)
-
-            append_markdown(
-                self.manager.trades_path,
-                f"- [수동 명령] 지정가 매도: {ticker} | 수량: {sell_volume:.6f} | 가격: {price} | Res: {res}",
-            )
 
             uuid = res.get("uuid", "N/A")
             return f"✅ 지정가 매도 주문 접수 완료\n종목: {ticker}\n수량: {sell_volume:.6f}\n지정가: {price} KRW\n주문 UUID: {uuid}"

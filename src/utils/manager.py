@@ -1,32 +1,21 @@
-import os
-import json
 import time
-from src.agents.base_agent import BaseAgent
-from src.utils.markdown_io import read_markdown, append_markdown, write_markdown
 from src.utils.broker_api import UpbitBroker
-from src.utils.llm_client import get_llm_client
-from src.strategies.base import BaseStrategy, Signal, SignalType
+from src.strategies.base import SignalType
 from src.utils.logger import logger
-from src.utils.telegram_notifier import TelegramNotifier
 from src.strategies.strategy_manager import StrategyManager
 from src.utils.risk_manager import RiskManager
 
 
-class ManagerAgent(BaseAgent):
+class ManagerAgent:
     def __init__(
         self,
         name: str = "manager",
         portfolio_manager=None,
-        prompt_path: str = "rules/prompt_investment_agent.md",
     ):
-        super().__init__(name, prompt_path)
+        self.name = name
         self.portfolio_manager = portfolio_manager
         self.agent_dir = f"manager"
-        self.strategy_path = os.path.join(self.agent_dir, "strategy.md")
-        self.trades_path = os.path.join(self.agent_dir, "trades.md")
-        self.performance_path = os.path.join(self.agent_dir, "performance.md")
         self.broker = UpbitBroker()
-        self.llm = get_llm_client()
         self.strategy_manager = StrategyManager()
         self.risk_manager = RiskManager(self.portfolio_manager)
 
@@ -36,20 +25,6 @@ class ManagerAgent(BaseAgent):
             "ranging": "MeanReversion",
             "volatile": "Breakout",
         }
-
-    def get_state(self) -> str:
-        strategy = read_markdown(self.strategy_path)
-        trades = read_markdown(self.trades_path)
-
-        # 포트폴리오 정보도 상태에 포함
-        portfolio_info = ""
-        if self.portfolio_manager:
-            summary = self.portfolio_manager.get_portfolio_summary(self.name)
-            if summary:
-                portfolio_info = f"\n\n--- Portfolio ---\nCash: {summary['cash']:,.0f} KRW\nTotal Value: {summary['total_value']:,.0f} KRW\nReturn: {summary['return_rate']:+.2f}%"
-
-        state = f"--- Strategy ---\n{strategy}\n\n--- Recent Trades ---\n{trades}{portfolio_info}"
-        return state
 
     # 업비트 최소 주문 금액
     MIN_ORDER_AMOUNT = 5000
@@ -269,11 +244,6 @@ class ManagerAgent(BaseAgent):
                         paid_fee=paid_fee,
                     )
 
-            append_markdown(
-                self.trades_path,
-                f"- [{strategy_name}] 매수: {ticker} | 금액: {order_amount:,.0f} KRW | 사유: {signal.reason} | Res: {order_info or res}",
-            )
-
     def _execute_sell(
         self, strategy_name: str, ticker: str, current_price: float, signal
     ) -> None:
@@ -427,8 +397,3 @@ class ManagerAgent(BaseAgent):
                         executed_funds=executed_funds,
                         paid_fee=paid_fee,
                     )
-
-            append_markdown(
-                self.trades_path,
-                f"-[{strategy_name}] 매도: {ticker} | 수량: {sell_volume:.6f} | 사유: {signal.reason} | Res: {order_info or res}",
-            )

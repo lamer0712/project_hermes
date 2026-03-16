@@ -12,7 +12,7 @@ import time
 import schedule
 import concurrent.futures
 import threading
-from src.agents.manager import ManagerAgent
+from src.utils.manager import ManagerAgent
 from src.utils.broker_api import UpbitBroker
 from src.utils.portfolio_manager import PortfolioManager
 from src.utils.telegram_notifier import TelegramNotifier
@@ -82,7 +82,9 @@ def execute_trading_cycle(manager: ManagerAgent):
     )
 
     # 교집합만 유지 (둘 다 성공한 경우만)
-    valid_tickers = set(setup_market_data.keys()).intersection(set(entry_market_data.keys()))
+    valid_tickers = set(setup_market_data.keys()).intersection(
+        set(entry_market_data.keys())
+    )
     setup_market_data = {k: setup_market_data[k] for k in valid_tickers}
     entry_market_data = {k: entry_market_data[k] for k in valid_tickers}
 
@@ -108,7 +110,6 @@ def execute_daily_sync(pm, manager, notifier):
         notifier.send_message(sync_result)
     except Exception as e:
         logger.error(f"Daily sync error: {e}")
-
 
 
 def main():
@@ -150,10 +151,9 @@ def main():
         if b.get("currency") != "KRW" and float(b.get("balance", "0")) > 0
     ]
     ws_tickers = list(set(TARGET_COINS + held_coins))
-    
+
     ws_client = UpbitWebSocketClient(
-        tickers=ws_tickers,
-        callbacks=[manager.handle_realtime_tick]
+        tickers=ws_tickers, callbacks=[manager.handle_realtime_tick]
     )
     ws_client.start()
 
