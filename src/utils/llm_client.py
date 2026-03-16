@@ -87,7 +87,6 @@ class LocalLLMClient:
                         parsed_obj = schema_cls.model_validate_json(result_text)
                         return parsed_obj.model_dump()
                     except Exception as e:
-                        # logger.warning(f"[LLM Warning] Schema Validation Fail: {e} | Text: {result_text}")
                         # If simple fix possible (e.g. wrapped in list)
                         if result_text.startswith("[") and result_text.endswith("]"):
                             # some models wrap json in a list
@@ -99,10 +98,8 @@ class LocalLLMClient:
                     return json.loads(result_text)
                 
             except Exception as e:
-                # logger.error(f"[LLM Warning] 시도 {attempt+1} 실패: {e}")
                 time.sleep(2)
                 
-        # logger.error("[LLM Error] 최대 재시도 초과. 빈 객체 반환.")
         return {}
 
     def generate_text(self, system_prompt: str, user_prompt: str) -> str:

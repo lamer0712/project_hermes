@@ -1,115 +1,171 @@
+from typing import Optional, Dict
 from src.strategies.base import BaseStrategy, Signal, SignalType
+import pandas as pd
 
 
 class BreakoutStrategy(BaseStrategy):
     """
-    브레이크아웃(돌파) 전략 (확장용 - 향후 agent_gamma 등)
-    
-    핵심 로직:
-    - 가격이 N일 최고가를 돌파하면 매수 (상승 돌파)
-    - 가격이 N일 최저가를 하회하면 매도 (하락 돌파)
-    - 터틀 트레이딩 전략에서 영감받은 채널 돌파 매매
-    
-    특징:
-    - 강한 추세 시작 시점에 진입 가능
-    - 횡보장에서는 가짜 돌파(whipsaw)로 손실 위험
-    - RSI 모멘텀/볼린저와 완전히 다른 접근
+    Breakout Strategy (코인용 개선)
+
+    구조
+    - Setup (변동성 수축)
+    - Entry (돌파 + 거래량)
+    - Exit (모멘텀 약화)
     """
 
     def __init__(self, params: dict = None):
         default = self.get_default_params()
+
         if params:
             default.update(params)
-        super().__init__("채널 브레이크아웃", default)
 
-    def get_default_params(self) -> dict:
+        super().__init__("Breakout", default)
+
+    def get_default_params(self):
+
         return {
-            "breakout_period": 20,       # N일 최고/최저가 기준
-            "breakout_margin": 0.005,    # 돌파 확인 마진 (0.5%)
-            "volume_confirm": True,      # 거래량 확인 (현재 미구현, 확장용)
-            "position_size_ratio": 0.35, # 가용 현금의 35%씩 진입
+            "regime": "volatile",
+            "setup": {
+                "timeframe": "1h",
+                "bb_width_threshold": 0.05,
+                "adx_threshold": 18,
+            },
+            "entry": {
+                "timeframe": "15m",
+                "volume_multiplier": 1.6,
+                "breakout_buffer": 0.002,
+            },
+            "exit": {
+                "rsi_threshold": 70,
+            },
+            "risk": {
+                "stop_loss_pct": -3.5,
+                "take_profit_pct": 15.0,
+                "trailing_start_pct": 5.0,
+                "trailing_stop_pct": 2.5,
+            },
+            "position_size_ratio": 0.25,
         }
 
-    def evaluate(self, market_data: dict, portfolio_info: dict = None) -> Signal:
-        ticker = market_data.get("ticker", "Unknown")
-        current_price = float(market_data.get("current_price", 0))
-        high_n = float(market_data.get("high_20", 0))
-        low_n = float(market_data.get("low_20", 0))
-        trend = market_data.get("trend", "ranging")
+    def evaluate(
+        self,
+        ticker: str,
+        setup_market_data: pd.DataFrame,
+        entry_market_data: pd.DataFrame,
+        regime: str,
+        portfolio_info: dict = None,
+    ) -> Signal:
 
-        if high_n == 0 or low_n == 0:
+        holdings = portfolio_info.get("holdings", {}) if portfolio_info else {}
+        is_held = ticker in holdings and holdings[ticker]["volume"] > 0
+
+        if entry_market_data is None or len(entry_market_data) < 20:
+            return Signal(SignalType.HOLD, ticker, "데이터 부족", 0)
+
+        current = entry_market_data.iloc[-1]
+        prev = entry_market_data.iloc[-2]
+
+        price = float(current.close)
+        prev_price = float(prev.close)
+
+        volume = float(current.volume)
+        volume_ma = float(current.get("volume_ma20", volume))
+
+        bb_upper = float(current.get("bb_upper", price))
+        bb_mid = float(current.get("bb_mid", price))
+
+        rsi = float(current.get("rsi_14", 50))
+
+        # =========================
+        # HOLDING → SELL
+        # =========================
+
+        if is_held:
+            # RSI 과열
+            if rsi > self.params["exit"]["rsi_threshold"]:
+                return Signal(
+                    SignalType.SELL,
+                    ticker,
+                    f"RSI overbought {rsi:.1f}",
+                    0.7,
+                )
+
             return Signal(
-                type=SignalType.HOLD,
-                ticker=ticker,
-                reason="N일 최고/최저가 데이터 없음 → 판단 보류",
-                strength=0.0
+                SignalType.HOLD,
+                ticker,
+                "추세 유지",
+                0,
             )
 
-        margin = self.params.get("breakout_margin", 0.005)
-        position_ratio = self.params.get("position_size_ratio", 0.35)
+        # =========================
+        # SETUP (1h)
+        # =========================
 
-        # 상승 돌파 매수: 현재가가 N일 최고가를 마진만큼 초과
-        upper_breakout = high_n * (1 + margin)
-        if current_price >= upper_breakout:
-            # 돌파 강도에 비례한 시그널 강도
-            breakout_pct = (current_price - high_n) / high_n
-            strength = min(position_ratio * (1 + breakout_pct * 10), 1.0)
-            return Signal(
-                type=SignalType.BUY,
-                ticker=ticker,
-                reason=f"가격({current_price:,.0f})이 {self.params.get('breakout_period', 20)}일 최고가({high_n:,.0f}) 돌파 (+{breakout_pct:.2%}) → 브레이크아웃 매수",
-                strength=strength
+        if setup_market_data is not None and len(setup_market_data) > 0:
+
+            setup = setup_market_data.iloc[-1]
+
+            bb_width = float(setup.get("bb_width", 0))
+            adx = float(setup.get("adx_14", 0))
+
+            setup_cfg = self.params["setup"]
+
+            setup_ok = (
+                bb_width < setup_cfg["bb_width_threshold"]
+                and adx > setup_cfg["adx_threshold"]
             )
 
-        # 하락 돌파 매도: 현재가가 N일 최저가를 마진만큼 하회
-        lower_breakout = low_n * (1 - margin)
-        if current_price <= lower_breakout:
-            breakdown_pct = (low_n - current_price) / low_n
-            strength = min(breakdown_pct * 10 + 0.5, 1.0)
-            return Signal(
-                type=SignalType.SELL,
-                ticker=ticker,
-                reason=f"가격({current_price:,.0f})이 {self.params.get('breakout_period', 20)}일 최저가({low_n:,.0f}) 하회 (-{breakdown_pct:.2%}) → 브레이크다운 매도",
-                strength=strength
-            )
+            if not setup_ok:
+                return Signal(
+                    SignalType.HOLD,
+                    ticker,
+                    f"Setup 미충족 [BB width {bb_width:.3f}(<{setup_cfg['bb_width_threshold']}) ADX {adx:.1f}(>{setup_cfg['adx_threshold']})]",
+                    0,
+                )
 
-        # 채널 내 위치 계산
-        channel_range = high_n - low_n
-        if channel_range > 0:
-            channel_position = (current_price - low_n) / channel_range
-        else:
-            channel_position = 0.5
+        # =========================
+        # ENTRY (15m)
+        # =========================
+
+        reasons = []
+        strength = 0
+
+        entry_cfg = self.params["entry"]
+
+        breakout_buffer = entry_cfg["breakout_buffer"]
+
+        breakout = price > bb_upper * (1 + breakout_buffer)
+
+        if breakout:
+            strength += 0.5
+            reasons.append("Upper band breakout")
+
+        volume_trigger = volume > volume_ma * entry_cfg["volume_multiplier"]
+
+        if volume_trigger:
+            strength += 0.4
+            reasons.append("Volume spike")
+
+        price_acceleration = price > prev_price * 1.003
+
+        if price_acceleration:
+            strength += 0.2
+            reasons.append("Momentum acceleration")
+
+        if strength >= 0.6:
+
+            size_ratio = self.params["position_size_ratio"]
+
+            return Signal(
+                SignalType.BUY,
+                ticker,
+                " | ".join(reasons),
+                strength * size_ratio,
+            )
 
         return Signal(
-            type=SignalType.HOLD,
-            ticker=ticker,
-            reason=f"채널 내 위치: {channel_position:.0%} (범위: {low_n:,.0f} ~ {high_n:,.0f}) → 돌파 대기",
-            strength=0.0
+            SignalType.HOLD,
+            ticker,
+            f"Entry 대기 {strength}>0.6, reasons: {reasons}",
+            0,
         )
-
-    def get_strategy_description(self) -> str:
-        p = self.params
-        return f"""# 🚀 채널 브레이크아웃 전략
-
-## 전략 개요
-N일 가격 채널(최고가/최저가)을 활용한 돌파 매매 전략입니다.
-터틀 트레이딩에서 영감받은 채널 브레이크아웃을 기반으로 합니다.
-
-## 매매 규칙
-- **매수 조건**: 현재가 > {p.get('breakout_period', 20)}일 최고가 × (1 + {p.get('breakout_margin', 0.005):.1%})
-- **매도 조건**: 현재가 < {p.get('breakout_period', 20)}일 최저가 × (1 - {p.get('breakout_margin', 0.005):.1%})
-- **포지션 크기**: 가용 현금의 {p.get('position_size_ratio', 0.35):.0%}
-
-## 현재 파라미터
-```json
-{{"breakout_period": {p.get('breakout_period', 20)}, "breakout_margin": {p.get('breakout_margin', 0.005)}, "volume_confirm": {str(p.get('volume_confirm', True)).lower()}, "position_size_ratio": {p.get('position_size_ratio', 0.35)}}}
-```
-
-## 장점
-- 강한 추세의 시작을 포착 가능 (초기 진입)
-- 단순하고 객관적인 기준
-
-## 단점
-- 횡보장에서 가짜 돌파(whipsaw) 손실 위험
-- 이미 충분히 오른 후 진입할 수 있음
-"""

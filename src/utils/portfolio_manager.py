@@ -8,10 +8,8 @@ from src.utils.logger import logger
 
 class PortfolioManager:
     """
-    개별 Investor 에이전트의 가상 자산을 분리 관리하는 클래스.
-    매니저가 전체 투자금에서 각 investor에게 자본을 배분하고,
-    각 investor는 자기 배분 금액 내에서만 매매합니다.
-    실제 Upbit 계좌는 하나지만, 논리적으로 자산을 분리 추적합니다.
+    가상 자산을 관리하는 클래스.
+    실제 Upbit 계좌는 하나이며, 이 계좌의 모든 자산을 단일 포트폴리오로 추적합니다.
     """
 
     STATE_FILE = "manager/portfolio_state.json"
@@ -32,7 +30,7 @@ class PortfolioManager:
                     self.total_capital = data.get("total_capital", self.total_capital)
                     self.portfolios = data.get("portfolios", {})
                     logger.info(
-                        f"[Manager] 포트폴리오 상태 복원 완료 ({len(self.portfolios)}명의 investor)"
+                        f"[Manager] 포트폴리오 상태 복원 완료 ('manager' 포트폴리오)"
                     )
             except Exception as e:
                 logger.error(f"[Manager] 상태 복원 실패, 초기화: {e}")
@@ -336,26 +334,7 @@ class PortfolioManager:
         }
 
     def reallocate(self, allocations: dict):
-        """
-        매니저의 성과 평가에 따라 자본을 재배분합니다.
-
-        Args:
-            allocations: {agent_name: new_capital_amount, ...}
-        """
-        for agent_name, new_amount in allocations.items():
-            if agent_name in self.portfolios:
-                old_capital = self.portfolios[agent_name]["initial_capital"]
-                diff = new_amount - old_capital
-                self.portfolios[agent_name]["cash"] += diff
-                self.portfolios[agent_name]["initial_capital"] = new_amount
-                sign = "+" if diff > 0 else ""
-                logger.info(
-                    f"[Manager] 자본 재배분: {agent_name} {old_capital:,.0f} → {new_amount:,.0f} ({sign}{diff:,.0f})"
-                )
-
-        self._save_state()
-        self._update_all_portfolio_md()
-        self._update_manager_portfolio_md()
+        pass
 
     def _update_portfolio_md(self, agent_name: str, current_prices: dict = None):
         """개별 에이전트의 portfolio.md를 업데이트합니다."""
@@ -392,29 +371,13 @@ class PortfolioManager:
         else:
             md += "_보유 종목 없음_\n"
 
-        portfolio_path = f"agents/{agent_name}/portfolio.md"
+        portfolio_path = f"manager/portfolio.md"
         write_markdown(portfolio_path, md)
 
     def _update_all_portfolio_md(self, current_prices: dict = None):
         """모든 에이전트의 portfolio.md를 업데이트합니다."""
         for agent_name in self.portfolios:
             self._update_portfolio_md(agent_name, current_prices)
-
-    def _update_manager_portfolio_md(self, current_prices: dict = None):
-        """manager/current_portfolio.md에 전체 배분 현황을 기록합니다."""
-        md = f"""# 전체 포트폴리오 배분 현황
-> 최종 업데이트: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
-
-## 총 투자 자본: {self.total_capital:,.0f} KRW
-
-| Investor | 배분 자본 | 현재 현금 | 총 평가액 | 수익률 | 매매 횟수 | 승률 |
-|----------|----------|----------|----------|--------|----------|------|
-"""
-        total_value_sum = 0
-        for agent_name in sorted(self.portfolios.keys()):
-            s = self.get_summary(agent_name, current_prices)
-            md += f"| {agent_name} | {s['initial_capital']:,.0f} | {s['cash']:,.0f} | {s['total_value']:,.0f} | {s['return_rate']:+.2f}% | {s['total_trades']} | {s['win_rate']:.1f}% |\n"
-            total_value_sum += s["total_value"]
 
         overall_return = (
             ((total_value_sum - self.total_capital) / self.total_capital * 100)
@@ -424,93 +387,3 @@ class PortfolioManager:
         md += f"\n## 전체 수익률: **{overall_return:+.2f}%** (총 평가액: {total_value_sum:,.0f} KRW)\n"
 
         write_markdown("manager/current_portfolio.md", md)
-
-    def update_performance_md(self, agent_name: str, current_prices: dict = None):
-        """에이전트의 performance.md를 업데이트합니다."""
-        summary = self.get_summary(agent_name, current_prices)
-        if not summary:
-            return
-
-        md = f"""# Performance: {agent_name.replace('_', ' ').title()}
-> 최종 업데이트: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
-
-- **수익률**: {summary['return_rate']:+.2f}%
-- **총 평가액**: {summary['total_value']:,.0f} KRW
-- **총 매매**: {summary['total_trades']}회 (승률: {summary['win_rate']:.1f}%)
-- **배분 자본**: {summary['initial_capital']:,.0f} KRW
-"""
-        write_markdown(f"agents/{agent_name}/performance.md", md)
-
-    def transfer_holdings_internally(
-        self, seller: str, ticker: str, volume: float, current_price: float
-    ) -> bool:
-        """
-        매도하려는 주식 가치가 5,000 KRW 미만일 때 외부 매도를 포기하고,
-        동일 종목을 이미 보유 중이며 현금이 있는 다른 에이전트에게 전량 매각(이관)합니다.
-
-        Returns:
-            이관 성공 시 True, 실패 시 False
-        """
-        if seller not in self.portfolios:
-            return False
-
-        sell_value = volume * current_price
-
-        # 조건: 1. seller 본인이 아님 2. 동일 종목을 이미 보유 중임 3. 매입할 현금이 있음
-        buyer = None
-        for candidate, portfolio in self.portfolios.items():
-            if candidate == seller:
-                continue
-
-            holdings = portfolio.get("holdings", {})
-            if ticker in holdings and holdings[ticker]["volume"] > 0:
-                if portfolio.get("cash", 0) >= sell_value:
-                    buyer = candidate
-                    break
-
-        if not buyer:
-            logger.error(
-                f"[Manager] ⚠️ {seller}의 {ticker} 소액 이관 실패 (동일 보유종목 & 현금 여유가 있는 에이전트 없음)"
-            )
-            return False
-
-        # 이관 진행
-        buyer_portfolio = self.portfolios[buyer]
-        seller_portfolio = self.portfolios[seller]
-
-        # 1. 판매자 측 자산 차감 및 현금 증가
-        seller_portfolio["cash"] += sell_value
-        seller_holdings = seller_portfolio["holdings"]
-        if ticker in seller_holdings:
-            seller_holdings[ticker]["volume"] -= volume
-            seller_holdings[ticker]["total_cost"] = (
-                seller_holdings[ticker]["volume"] * seller_holdings[ticker]["avg_price"]
-            )
-            if seller_holdings[ticker]["volume"] <= 1e-10:
-                del seller_holdings[ticker]
-
-        # 2. 구매자 측 보유 자산 증가 및 현금 차감, 평단가 재계산
-        buyer_portfolio["cash"] -= sell_value
-        buyer_holdings = buyer_portfolio["holdings"]
-
-        old_vol = buyer_holdings[ticker]["volume"]
-        old_cost = buyer_holdings[ticker]["total_cost"]
-        new_vol = old_vol + volume
-        new_cost = old_cost + sell_value
-
-        buyer_holdings[ticker]["volume"] = new_vol
-        buyer_holdings[ticker]["total_cost"] = new_cost
-        buyer_holdings[ticker]["avg_price"] = new_cost / new_vol if new_vol > 0 else 0
-
-        # 거래 통계 (선택적)
-        # 내부 이관도 1회의 매매(승패 미상)로 간주할 수도 있으나, 여기서는 통계에 넣지 않거나 단순 로그만 찍습니다.
-
-        self._save_state()
-        self._update_portfolio_md(seller)
-        self._update_portfolio_md(buyer)
-
-        msg = f"[Manager] 🤝 내부 장외 거래 성사: {seller} -> {buyer} ({ticker} {volume:.6f}개, {sell_value:,.0f} KRW)"
-        logger.info(msg)
-        self.notifier.send_message(msg)
-
-        return True
