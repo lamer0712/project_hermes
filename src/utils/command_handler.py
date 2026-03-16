@@ -109,9 +109,7 @@ class CommandQueueHandler:
 
     def _handle_sync(self, params):
         """업비트 실계좌 잔고를 동기화합니다."""
-        from src.main import synchronize_balances
-
-        sync_result = synchronize_balances(self.pm, self.manager, self.notifier)
+        sync_result = self.pm.synchronize_balances(self.manager)
         self.notifier.send_message(sync_result)
 
     def _handle_halt(self, params):

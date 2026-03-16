@@ -1,9 +1,12 @@
 import os
 import json
+import traceback
 from datetime import datetime
 from src.utils.markdown_io import write_markdown, read_markdown
 from src.utils.telegram_notifier import TelegramNotifier
 from src.utils.logger import logger
+from src.utils.broker_api import UpbitBroker
+from src.utils.db import DatabaseManager
 
 
 class PortfolioManager:
@@ -13,39 +16,73 @@ class PortfolioManager:
     상태 데이터 구조: {agent_name: {cash, holdings: {ticker: {volume, avg_price, total_cost}}, initial_capital}}
     """
 
-    STATE_FILE = "manager/portfolio_state.json"
-
-    def __init__(self, total_capital: float = 1000000):
+    def __init__(
+        self, total_capital: float = 1000000, db_path: str = "data/portfolio.db"
+    ):
         self.total_capital = total_capital
         self.portfolios = {}
         self.notifier = TelegramNotifier()
+        self.db = DatabaseManager(db_path)
         self.load_state()
 
     def load_state(self):
-        """디스크에서 포트폴리오 상태 복원"""
-        if os.path.exists(self.STATE_FILE):
-            try:
-                with open(self.STATE_FILE, "r", encoding="utf-8") as f:
-                    data = json.load(f)
-                    self.total_capital = data.get("total_capital", self.total_capital)
-                    self.portfolios = data.get("portfolios", {})
-                    logger.info(
-                        f"[Manager] 포트폴리오 상태 복원 완료 ('manager' 포트폴리오)"
-                    )
-            except Exception as e:
-                logger.error(f"[Manager] 상태 복원 실패, 초기화: {e}")
-                self.portfolios = {}
+        """DB에서 포트폴리오 상태 복원"""
+        try:
+            state = self.db.load_portfolio_state()
+            if state:
+                # db.py는 total_capital을 별도 관리하지 않으므로 현금+자산 가치로 추산해볼 수 있으나
+                # 편의상 기존 portfolios 구조만 병합
+                for agent_name, pb in state.items():
+                    if agent_name not in self.portfolios:
+                        self.portfolios[agent_name] = {
+                            "cash": pb["available_cash"],
+                            "holdings": {},
+                            "initial_capital": pb["allocated_capital"],
+                            "total_trades": 0,
+                            "winning_trades": 0,
+                            "is_halted": pb["is_halted"],
+                        }
+                    else:
+                        self.portfolios[agent_name]["cash"] = pb["available_cash"]
+                        self.portfolios[agent_name]["initial_capital"] = pb[
+                            "allocated_capital"
+                        ]
+                        self.portfolios[agent_name]["is_halted"] = pb["is_halted"]
+
+                    # Convert DB holdings (volume, avg_price, max_price, sl_levels_hit)
+                    # to memory format (volume, avg_price, total_cost, max_price, sl_levels_hit)
+                    db_holdings = pb.get("holdings", {})
+                    mem_holdings = {}
+                    for ticker, h in db_holdings.items():
+                        mem_holdings[ticker] = {
+                            "volume": h["volume"],
+                            "avg_price": h["avg_price"],
+                            "total_cost": h["volume"] * h["avg_price"],
+                            "max_price": h["max_price"],
+                            "sl_levels_hit": h["sl_levels_hit"],
+                        }
+                    self.portfolios[agent_name]["holdings"] = mem_holdings
+
+                logger.info("[Manager] 포트폴리오 상태 DB에서 복원 완료")
+        except Exception as e:
+            logger.error(f"[Manager] 상태 복원 실패, 초기화: {e}")
+            self.portfolios = {}
 
     def save_state(self):
-        """포트폴리오 상태를 디스크에 저장"""
-        os.makedirs(os.path.dirname(self.STATE_FILE), exist_ok=True)
-        data = {
-            "total_capital": self.total_capital,
-            "portfolios": self.portfolios,
-            "last_updated": datetime.now().isoformat(),
-        }
-        with open(self.STATE_FILE, "w", encoding="utf-8") as f:
-            json.dump(data, f, indent=2, ensure_ascii=False)
+        """포트폴리오 상태를 DB에 저장"""
+        try:
+            for agent_name, p in self.portfolios.items():
+                self.db.save_portfolio(
+                    agent_name,
+                    {
+                        "allocated_capital": p["initial_capital"],
+                        "available_cash": p["cash"],
+                        "is_halted": p["is_halted"],
+                    },
+                )
+                self.db.save_holdings(agent_name, p["holdings"])
+        except Exception as e:
+            logger.error(f"[Manager] DB 상태 저장 실패: {e}")
 
     def allocate(self, agent_name: str, amount: float):
         """에이전트에게 자본을 배분합니다."""
@@ -73,6 +110,17 @@ class PortfolioManager:
         if agent_name not in self.portfolios:
             return 0.0
         return self.portfolios[agent_name]["cash"]
+
+    def get_total_value(self, agent_name: str) -> float:
+        """에이전트의 총 자산 가치를 반환합니다."""
+        if agent_name not in self.portfolios:
+            return 0.0
+
+        portfolio = self.portfolios[agent_name]
+        total_value = portfolio["cash"]
+        for ticker, holding in portfolio["holdings"].items():
+            total_value += holding["volume"] * holding["avg_price"]
+        return total_value
 
     def get_holdings(self, agent_name: str) -> dict:
         """에이전트의 보유 종목을 반환합니다."""
@@ -116,9 +164,7 @@ class PortfolioManager:
                 f"[Manager] {agent_name} 잔고 부족: 필요 {total_cost_including_fee:,.0f} > 가용 {portfolio['cash']:,.0f}"
             )
             # 오차 보정: 5,000원 이하의 부족분은 허용하고 차감 진행
-            if (
-                total_cost_including_fee > portfolio["cash"] + 5000
-            ):
+            if total_cost_including_fee > portfolio["cash"] + 5000:
                 return False
 
         portfolio["cash"] -= total_cost_including_fee
@@ -148,6 +194,9 @@ class PortfolioManager:
 
         portfolio["total_trades"] = portfolio.get("total_trades", 0) + 1
         self.save_state()
+        self.db.record_trade(
+            agent_name, ticker, "buy", volume, price, executed_funds, paid_fee
+        )
         self.export_portfolio_report(agent_name)
         logger.info(
             f"[Manager] ✅ {agent_name} 매수 기록: {ticker} 거래수량: {volume:.6f}, 단가: {price:,.0f}, 거래금액: {total_cost_excluding_fee:,.0f}, 수수료: {paid_fee:,.2f}, 정산금액: {total_cost_including_fee:,.0f}, 잔여현금: {portfolio['cash']:,.0f})"
@@ -204,6 +253,9 @@ class PortfolioManager:
             portfolio["winning_trades"] = portfolio.get("winning_trades", 0) + 1
 
         self.save_state()
+        self.db.record_trade(
+            agent_name, ticker, "sell", volume, price, sell_revenue_gross, paid_fee
+        )
         self.export_portfolio_report(agent_name)
         profit_emoji = "⏫" if profit > 0 else "⏬"
         msg = f"[Manager] {profit_emoji} {agent_name} 매도 기록: {ticker}, 거래수량: {volume:.6f}, 단가: {price:,.0f}, 거래금액: {sell_revenue_gross:,.0f}, 수수료: {paid_fee:,.2f}, 정산금액: {sell_revenue_net:,.0f}, 손익: {profit:+,.0f}, 잔여현금: {portfolio['cash']:,.0f})"
@@ -296,7 +348,9 @@ class PortfolioManager:
         current_total = self.get_total_value(agent_name, current_prices)
         return ((current_total - initial) / initial) * 100
 
-    def get_portfolio_summary(self, agent_name: str, current_prices: dict = None) -> dict:
+    def get_portfolio_summary(
+        self, agent_name: str, current_prices: dict = None
+    ) -> dict:
         """에이전트의 포트폴리오 요약 정보 반환"""
         if agent_name not in self.portfolios:
             return {}
@@ -319,8 +373,6 @@ class PortfolioManager:
             "winning_trades": winning_trades,
             "win_rate": win_rate,
         }
-
-
 
     def export_portfolio_report(self, agent_name: str, current_prices: dict = None):
         """개별 에이전트의 portfolio.md 파일 생성 및 업데이트"""
@@ -359,3 +411,99 @@ class PortfolioManager:
 
         portfolio_path = f"manager/portfolio.md"
         write_markdown(portfolio_path, md)
+
+    def synchronize_balances(self, manager) -> str:
+        """업비트 실잔고 기반 포트폴리오 100% 동기화 및 재배분 실행"""
+        logger.info("[System] 🔄 업비트 실잔고 기반 포트폴리오 동기화 실행 중...")
+
+        try:
+            broker = UpbitBroker()
+            balances = broker.get_balances()
+
+            # 1. 실제 보유 잔고 및 코인 원가 파악
+            total_cash = 0.0
+            coin_holdings = {}
+
+            for b in balances:
+                currency = b.get("currency")
+                balance = float(b.get("balance", "0"))
+                avg_price = float(b.get("avg_buy_price", "0"))
+
+                if balance <= 0:
+                    continue
+
+                if currency == "KRW":
+                    total_cash = balance
+                elif (
+                    balance * avg_price > 100
+                ):  # 에어드랍(100원 미만) 및 원가 없는 코인 제외
+                    if currency not in (
+                        "WEMIX",
+                        "APENFT",
+                        "MEETONE",
+                        "HORUS",
+                        "ADD",
+                        "CHL",
+                        "BLACK",
+                    ):
+                        ticker = f"KRW-{currency}"
+                        coin_holdings[ticker] = {
+                            "volume": balance,
+                            "avg_price": avg_price,
+                            "total_cost": balance * avg_price,
+                        }
+
+            total_coin_cost = sum(v["total_cost"] for v in coin_holdings.values())
+            true_total_capital = total_cash + total_coin_cost
+
+            if not manager:
+                return "❌ 동기화 실패: 매니저가 없습니다."
+
+            target_capital_per_agent = true_total_capital
+            agent_name = manager.name
+
+            self.portfolios[agent_name] = {
+                "cash": 0.0,
+                "holdings": {},
+                "initial_capital": target_capital_per_agent,
+                "total_trades": self.portfolios.get(agent_name, {}).get(
+                    "total_trades", 0
+                ),
+                "winning_trades": self.portfolios.get(agent_name, {}).get(
+                    "winning_trades", 0
+                ),
+                "is_halted": self.portfolios.get(agent_name, {}).get(
+                    "is_halted", False
+                ),
+            }
+
+            for old_agent in list(self.portfolios.keys()):
+                if old_agent != agent_name:
+                    del self.portfolios[old_agent]
+
+            self.total_capital = true_total_capital
+            allocated_costs = 0.0
+
+            for ticker, data in coin_holdings.items():
+                self.portfolios[agent_name]["holdings"][ticker] = data
+                allocated_costs += data["total_cost"]
+
+            required_cash = target_capital_per_agent - allocated_costs
+            self.portfolios[agent_name]["cash"] = required_cash
+
+            self.save_state()
+            self.export_portfolio_report(agent_name)
+
+            msg = (
+                f"✅ **실계좌 동기화 100% 완료**\n\n"
+                f"💰 총 자본금: {true_total_capital:,.0f} KRW\n"
+                f"💳 보유 현금: {total_cash:,.0f} KRW\n"
+                f"🪙 코인 원가: {total_coin_cost:,.0f} KRW\n\n"
+                f"👥 **매니저에게 {target_capital_per_agent:,.0f} KRW 배분완료.**"
+            )
+            logger.info(f"[System] 동기화 성공: {true_total_capital} KRW 분배 완료.")
+            return msg
+
+        except Exception as e:
+            traceback.print_exc()
+            return f"❌ 동기화 실패: {e}"

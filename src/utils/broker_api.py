@@ -42,6 +42,12 @@ class UpbitBroker:
         """UpbitMarketData를 통해 DataFrame 포맷의 고급 시장 데이터를 제공합니다."""
         return UpbitMarketData.get_ohlcv_with_indicators_new(ticker, count, interval)
 
+    def get_multiple_ohlcv_with_indicators(
+        self, tickers: list[str], count: int = 100, interval: str = "minutes/60"
+    ) -> dict:
+        """선정된 다수 코인의 지표를 병렬로 수집하여 반환합니다."""
+        return UpbitMarketData.get_multiple_ohlcv_with_indicators(tickers, count, interval)
+
     def regime_detect(self, df) -> str:
         """UpbitMarketData의 regime 판독 로직을 래핑하여 제공합니다."""
         return UpbitMarketData.regime_detect(df)

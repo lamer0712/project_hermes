@@ -1,7 +1,9 @@
 import time
 import requests
+import concurrent.futures
 from src.utils.logger import logger
 import pandas as pd
+import talib
 
 
 class UpbitMarketData:
@@ -226,55 +228,67 @@ class UpbitMarketData:
         high = df["high"]
         low = df["low"]
 
+        # high / low
+        df["high_20"] = high.rolling(20).max()
+        df["low_20"] = low.rolling(20).min()
+
         # Moving averages
         df["ma_9"] = close.rolling(9).mean()
         df["ma_20"] = close.rolling(20).mean()
         df["ma_50"] = close.rolling(50).mean()
         df["ma_60"] = close.rolling(60).mean()
         df["ma_120"] = close.rolling(120).mean()
-
-        # RSI
-        delta = close.diff()
-        gain = delta.clip(lower=0)
-        loss = -delta.clip(upper=0)
-
-        rs = gain.rolling(14).mean() / loss.rolling(14).mean()
-        df["rsi"] = 100 - (100 / (1 + rs))
-        df["rsi_14"] = df["rsi"]
-
-        ## Bollinger Bands
-        sd = close.rolling(20).std()
-
-        df["bb_mid"] = df["ma_20"]
-        df["bb_upper"] = df["ma_20"] + 2.0 * sd
-        df["bb_lower"] = df["ma_20"] - 2.0 * sd
-        df["bb_position"] = (close - df["bb_lower"]) / (df["bb_upper"] - df["bb_lower"])
-
-        ## Volume Moving Average
         df["volume_ma20"] = df["volume"].rolling(20).mean()
 
+        ## RSI
+        df["rsi_14"] = talib.RSI(close, timeperiod=14)
+
+        ## Bollinger Bands
+        df["bb_upper"], df["bb_mid"], df["bb_lower"] = talib.BBANDS(
+            close, timeperiod=20, nbdevup=2, nbdevdn=2
+        )
+        df["bb_position"] = (close - df["bb_lower"]) / (df["bb_upper"] - df["bb_lower"])
+
         ## ATR
-        tr1 = high - low
-        tr2 = (high - close.shift()).abs()
-        tr3 = (low - close.shift()).abs()
+        df["atr_14"] = talib.ATR(high, low, close, timeperiod=14)
 
-        tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+        ## ADX
+        df["adx_14"] = talib.ADX(high, low, close, timeperiod=14)
+        df["plus_di_14"] = talib.PLUS_DI(high, low, close, timeperiod=14)
+        df["minus_di_14"] = talib.MINUS_DI(high, low, close, timeperiod=14)
 
-        df["atr_14"] = tr.rolling(14).mean()
+        ## EMA
+        df["ema_20"] = talib.EMA(close, timeperiod=20)
 
-        ## high / low
-        df["high_20"] = high.rolling(20).max()
-        df["low_20"] = low.rolling(20).min()
-
-        adx, plus_di, minus_di = cls.calculate_adx(df)
-        df["adx_14"] = adx
-        df["plus_di_14"] = plus_di
-        df["minus_di_14"] = minus_di
-
-        df["ema_20"] = close.ewm(span=20, adjust=False).mean()
-
+        ## Change 5
         df["change_5"] = df["close"].pct_change(5) * 100
         return df
+
+    @classmethod
+    def get_multiple_ohlcv_with_indicators(
+        cls, tickers: list[str], count: int = 100, interval: str = "minutes/15"
+    ) -> dict:
+        results = {}
+        with concurrent.futures.ThreadPoolExecutor(
+            max_workers=min(10, max(1, len(tickers)))
+        ) as executor:
+            future_to_ticker = {
+                executor.submit(
+                    cls.get_ohlcv_with_indicators_new, ticker, count, interval
+                ): ticker
+                for ticker in tickers
+            }
+            for future in concurrent.futures.as_completed(future_to_ticker):
+                ticker = future_to_ticker[future]
+                try:
+                    df = future.result()
+                    if not df.empty:
+                        results[ticker] = df
+                except Exception as exc:
+                    logger.error(
+                        f"[Market Data API] {ticker} generated an exception: {exc}"
+                    )
+        return results
 
     @classmethod
     def get_dynamic_target_coins(cls, top_n: int = 20) -> list:

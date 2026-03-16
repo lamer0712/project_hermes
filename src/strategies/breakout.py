@@ -38,12 +38,6 @@ class BreakoutStrategy(BaseStrategy):
             "exit": {
                 "rsi_threshold": 70,
             },
-            "risk": {
-                "stop_loss_pct": -3.5,
-                "take_profit_pct": 15.0,
-                "trailing_start_pct": 5.0,
-                "trailing_stop_pct": 2.5,
-            },
             "position_size_ratio": 0.25,
         }
 

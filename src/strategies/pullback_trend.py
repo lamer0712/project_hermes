@@ -35,12 +35,6 @@ class PullbackTrendStrategy(BaseStrategy):
             "exit": {
                 "rsi_threshold": 65,
             },
-            "risk": {
-                "stop_loss_pct": -5.0,
-                "take_profit_pct": 12.0,
-                "trailing_start_pct": 4.0,
-                "trailing_stop_pct": 2.0,
-            },
             "position_size_ratio": 0.35,
         }
 
@@ -73,28 +67,6 @@ class PullbackTrendStrategy(BaseStrategy):
         # =========================
 
         if is_held:
-
-            avg_price = float(holdings[ticker]["avg_price"])
-            return_pct = (current_price - avg_price) / avg_price * 100
-
-            risk = self.params["risk"]
-
-            if return_pct <= risk["stop_loss_pct"]:
-                return Signal(
-                    SignalType.SELL,
-                    ticker,
-                    f"StopLoss {return_pct:.2f}%",
-                    1.0,
-                )
-
-            if return_pct >= risk["take_profit_pct"]:
-                return Signal(
-                    SignalType.SELL,
-                    ticker,
-                    f"TakeProfit {return_pct:.2f}%",
-                    1.0,
-                )
-
             rsi_sell = rsi_entry > self.params["exit"]["rsi_threshold"]
 
             bb_upper_touch = current_price > entry_market_data.bb_upper.iloc[-1]

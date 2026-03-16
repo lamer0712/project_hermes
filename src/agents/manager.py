@@ -9,6 +9,7 @@ from src.strategies.base import BaseStrategy, Signal, SignalType
 from src.utils.logger import logger
 from src.utils.telegram_notifier import TelegramNotifier
 from src.strategies.strategy_manager import StrategyManager
+from src.utils.risk_manager import RiskManager
 
 
 class ManagerAgent(BaseAgent):
@@ -27,6 +28,7 @@ class ManagerAgent(BaseAgent):
         self.broker = UpbitBroker()
         self.llm = get_llm_client()
         self.strategy_manager = StrategyManager()
+        self.risk_manager = RiskManager(self.portfolio_manager)
 
         # 시장 Regime에 따른 매핑 (기본값)
         self.strategy_map = {
@@ -51,6 +53,8 @@ class ManagerAgent(BaseAgent):
 
     # 업비트 최소 주문 금액
     MIN_ORDER_AMOUNT = 5000
+    MAX_POSITION_RATIO = 0.3
+    MAX_POSITIONS = 5
 
     def execute_cycle(
         self,
@@ -105,122 +109,15 @@ class ManagerAgent(BaseAgent):
             strategy = self.strategy_manager.get_strategy(target_strategy_name)
 
             # 매도 판단 전에 전역 손절/익절/트레일링 스탑 검사 우선
-            sell_executed = False
             if holdings and ticker in holdings and holdings[ticker]["volume"] > 0:
-                avg_price = holdings[ticker].get("avg_price", 0)
-                max_price = max(holdings[ticker].get("max_price", avg_price), avg_price)
-                # 최고가 갱신
-                if avg_price <= 0:
+                risk_signal = self.risk_manager.evaluate_risk(
+                    self.name, ticker, current_price
+                )
+                if risk_signal:
+                    self._execute_sell(
+                        "RiskManager", ticker, current_price, risk_signal
+                    )
                     continue
-
-                if current_price > max_price:
-                    self.portfolio_manager.update_holding_metadata(
-                        self.name, ticker, max_price=current_price
-                    )
-                    max_price = current_price
-
-                if avg_price > 0:
-                    profit_pct = (current_price - avg_price) / avg_price * 100.0
-                    risk_params = strategy.params.get("risk", {})
-                    stop_loss_pct = risk_params.get("stop_loss_pct", -5.0)
-                    take_profit_pct = risk_params.get("take_profit_pct", 10.0)
-                    trailing_stop_pct = risk_params.get("trailing_stop_pct", None)
-                    trailing_start_pct = risk_params.get("trailing_start_pct", 1.0)
-                    partial_stop_loss = sorted(
-                        risk_params.get("partial_stop_loss", []),
-                        key=lambda x: x["pct"],
-                        reverse=True,
-                    )
-
-                    # 1. 트레일링 스탑
-                    if (
-                        trailing_stop_pct is not None
-                        and profit_pct >= trailing_start_pct
-                    ):
-                        drawdown_from_max = (
-                            (current_price - max_price) / max_price * 100.0
-                            if max_price > 0
-                            else 0
-                        )
-                        if drawdown_from_max <= -abs(trailing_stop_pct):
-                            logger.info(
-                                f"📉 트레일링 스탑 발동: {ticker} (최점 대비 {drawdown_from_max:.2f}% <= {trailing_stop_pct}%)"
-                            )
-                            ts_signal = Signal(
-                                type=SignalType.SELL,
-                                ticker=ticker,
-                                reason=f"트레일링 스탑 (수익률 {profit_pct:.2f}%)",
-                                strength=1.0,
-                            )
-                            self._execute_sell(
-                                strategy, ticker, current_price, ts_signal
-                            )
-                            sell_executed = True
-                            continue
-
-                    # 2. 강제 익절
-                    if profit_pct >= take_profit_pct:
-                        logger.info(
-                            f"🎯 강제 익절 발동: {ticker} (수익률 {profit_pct:.2f}% >= {take_profit_pct}%)"
-                        )
-                        tp_signal = Signal(
-                            type=SignalType.SELL,
-                            ticker=ticker,
-                            reason=f"강제 익절 (수익률 {profit_pct:.2f}%)",
-                            strength=1.0,
-                        )
-                        self._execute_sell(strategy, ticker, current_price, tp_signal)
-                        sell_executed = True
-                        continue
-
-                    # 3. 분할 강제 손절
-                    sl_triggered = False
-                    if partial_stop_loss:
-                        for sl_stage in partial_stop_loss:
-                            stage_pct = sl_stage.get("pct", stop_loss_pct)
-                            stage_strength = sl_stage.get("strength", 1.0)
-                            sl_levels_hit = holdings[ticker].get("sl_levels_hit", [])
-
-                            if (
-                                profit_pct <= stage_pct
-                                and stage_pct not in sl_levels_hit
-                            ):
-                                logger.error(
-                                    f"🚨 분할 손절 발동 [{stage_pct}%]: {ticker} (수익률 {profit_pct:.2f}% <= {stage_pct}%) 비율: {stage_strength*100}%"
-                                )
-                                self.portfolio_manager.update_holding_metadata(
-                                    self.name, ticker, hit_sl_level=stage_pct
-                                )
-                                sl_signal = Signal(
-                                    type=SignalType.SELL,
-                                    ticker=ticker,
-                                    reason=f"분할 손절 단계 {stage_pct}% (현재 {profit_pct:.2f}%)",
-                                    strength=stage_strength,
-                                )
-                                self._execute_sell(
-                                    strategy, ticker, current_price, sl_signal
-                                )
-                                sl_triggered = True
-                                sell_executed = True
-                                break  # 루프에서 하나만 처리
-
-                    if sl_triggered:
-                        continue
-
-                    # 단일 기본 손절
-                    if not partial_stop_loss and profit_pct <= stop_loss_pct:
-                        logger.warning(
-                            f"🚨 강제 손절 발동: {ticker} (수익률 {profit_pct:.2f}% <= {stop_loss_pct}%)"
-                        )
-                        sl_signal = Signal(
-                            type=SignalType.SELL,
-                            ticker=ticker,
-                            reason=f"강제 손절 (수익률 {profit_pct:.2f}%)",
-                            strength=1.0,
-                        )
-                        self._execute_sell(strategy, ticker, current_price, sl_signal)
-                        sell_executed = True
-                        continue
 
             signal = strategy.evaluate(
                 ticker,
@@ -232,9 +129,9 @@ class ManagerAgent(BaseAgent):
             logger.info(f"{target_strategy_name} - {signal}")
 
             # SELL 시그널은 즉시 실행 (보유 종목만)
-            if signal and signal.type == SignalType.SELL and not sell_executed:
+            if signal and signal.type == SignalType.SELL:
                 if holdings and ticker in holdings and holdings[ticker]["volume"] > 0:
-                    self._execute_sell(strategy, ticker, current_price, signal)
+                    self._execute_sell(strategy.name, ticker, current_price, signal)
 
             # BUY 시그널은 후보로 수집 (가장 강한 것만 나중에 실행)
             elif signal and signal.type == SignalType.BUY:
@@ -257,9 +154,27 @@ class ManagerAgent(BaseAgent):
             ticker = market_data.get("ticker", "Unknown")
             current_price = float(market_data.get("current_price", 0.0))
             logger.info(f"🏆 Best Buy | {best_buy_strategy.name} → {signal}")
-            self._execute_buy(best_buy_strategy, ticker, current_price, signal)
+            self._execute_buy(best_buy_strategy.name, ticker, current_price, signal)
 
-    def _execute_buy(self, strategy, ticker: str, current_price: float, signal) -> None:
+    def handle_realtime_tick(self, ticker: str, current_price: float) -> None:
+        """웹소켓에서 수신한 실시간 틱 데이터를 바탕으로 긴급 손절/익절을 검사합니다."""
+        if getattr(self, "portfolio_manager", None) is None:
+            return
+
+        holdings = self.portfolio_manager.get_holdings(self.name)
+        if ticker not in holdings or holdings[ticker].get("volume", 0) <= 0:
+            return
+
+        risk_signal = self.risk_manager.evaluate_risk(self.name, ticker, current_price)
+        if risk_signal:
+            logger.warning(
+                f"⚡ [Realtime Risk Hook] 즉각적인 리스크 조건 충족: {ticker} @ {current_price}"
+            )
+            self._execute_sell("RiskManager", ticker, current_price, risk_signal)
+
+    def _execute_buy(
+        self, strategy_name: str, ticker: str, current_price: float, signal
+    ) -> None:
         """매수 실행 (PortfolioManager 연동)"""
         if not self.broker.is_configured():
             return
@@ -267,10 +182,19 @@ class ManagerAgent(BaseAgent):
         # 투자금 계산: 포트폴리오 매니저의 가용 현금 × 시그널 강도
         if self.portfolio_manager:
             available_cash = self.portfolio_manager.get_available_cash(self.name)
-            order_amount = available_cash * signal.strength
+            # order_amount = available_cash * signal.strength
+
+            portfolio_value = self.portfolio_manager.get_total_value(self.name)
+
+            base_position_size = portfolio_value / self.MAX_POSITIONS
+            base_position_size = min(base_position_size, available_cash)
+
+            strength = max(self.MAX_POSITION_RATIO, min(signal.strength, 1.0))
+
+            order_amount = base_position_size * strength
 
             # 전략 파라미터에서 손절률 가져옴 (명시적이지 않으면 기본 -5.0%)
-            stop_loss_pct = strategy.params.get("stop_loss_pct", -5.0)
+            stop_loss_pct = self.risk_manager.risk_params.get("stop_loss_pct", -5.0)
             loss_ratio = abs(float(stop_loss_pct)) / 100.0
             if loss_ratio >= 1.0:
                 loss_ratio = 0.99
@@ -347,11 +271,11 @@ class ManagerAgent(BaseAgent):
 
             append_markdown(
                 self.trades_path,
-                f"- [{strategy.name}] 매수: {ticker} | 금액: {order_amount:,.0f} KRW | 사유: {signal.reason} | Res: {order_info or res}",
+                f"- [{strategy_name}] 매수: {ticker} | 금액: {order_amount:,.0f} KRW | 사유: {signal.reason} | Res: {order_info or res}",
             )
 
     def _execute_sell(
-        self, strategy, ticker: str, current_price: float, signal
+        self, strategy_name: str, ticker: str, current_price: float, signal
     ) -> None:
         """매도 실행 (PortfolioManager 연동)"""
         if not self.broker.is_configured():
@@ -506,5 +430,5 @@ class ManagerAgent(BaseAgent):
 
             append_markdown(
                 self.trades_path,
-                f"- [{strategy.name}] 매도: {ticker} | 수량: {sell_volume:.6f} | 사유: {signal.reason} | Res: {order_info or res}",
+                f"-[{strategy_name}] 매도: {ticker} | 수량: {sell_volume:.6f} | 사유: {signal.reason} | Res: {order_info or res}",
             )

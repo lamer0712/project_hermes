@@ -29,12 +29,6 @@ class MeanReversionStrategy(BaseStrategy):
                 "rsi_threshold": 60,
                 "bb_position_threshold": 0.5,
             },
-            "risk": {
-                "stop_loss_pct": -4.0,
-                "take_profit_pct": 7.0,
-                "trailing_start_pct": 2.0,
-                "trailing_stop_pct": 1.5,
-            },
             "position_size_ratio": 0.30,
         }
 
@@ -69,7 +63,6 @@ class MeanReversionStrategy(BaseStrategy):
 
         entry_cfg = self.params["entry"]
         exit_cfg = self.params["exit"]
-        risk_cfg = self.params["risk"]
 
         # ------------------------------
         # HOLDING → SELL
