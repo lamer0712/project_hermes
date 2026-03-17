@@ -56,7 +56,7 @@ class UpbitWebSocketClient:
                                 for callback in self.callbacks:
                                     asyncio.create_task(
                                         self._run_callback(
-                                            callback, ticker, current_price
+                                            callback, ticker, price
                                         )
                                     )
 
