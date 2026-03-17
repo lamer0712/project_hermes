@@ -94,7 +94,7 @@ class UpbitMarketData:
         return "ranging"
 
     @staticmethod
-    def regime_detect(df):
+    def regime_detect(ticker: str, df):
         price = df.close.iloc[-1]
 
         ma20 = df.ma_20.iloc[-1]
@@ -113,6 +113,9 @@ class UpbitMarketData:
         trend_strength = abs(ma20 - ma60) / ma60
         ema_slope = (ema_now - ema_prev) / ema_prev
 
+        # print(
+        #     f"Regime {ticker:<10} | ma20: {ma20:.3f},{ma60:.3f} | rsi(55↑,44↓): {rsi:.3f} | adx: {adx>18} | ema_slope: {ema_slope>0} | volatility: {volatility>0.05} | trend_strength: {trend_strength>0.02}"
+        # )
         # Bullish
         if ma20 > ma60 * 1.01 and rsi > 55 and ema_slope > 0 and adx > 18:
             return "bullish"
@@ -221,7 +224,6 @@ class UpbitMarketData:
         df["ma_20"] = close.rolling(20).mean()
         df["ma_50"] = close.rolling(50).mean()
         df["ma_60"] = close.rolling(60).mean()
-        df["ma_120"] = close.rolling(120).mean()
         df["volume_ma20"] = df["volume"].rolling(20).mean()
 
         ## RSI

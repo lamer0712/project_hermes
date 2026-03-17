@@ -78,14 +78,14 @@ class PullbackTrendStrategy(BaseStrategy):
                 return Signal(
                     SignalType.SELL,
                     ticker,
-                    f"Exit signal (RSI {rsi_entry:.1f})",
+                    f"Exit rsi:{rsi_sell}, bb:{bb_upper_touch}",
                     strength,
                 )
 
             return Signal(
                 SignalType.HOLD,
                 ticker,
-                "보유 유지",
+                "보유 중, 추세 유지",
                 0,
             )
 
@@ -110,7 +110,7 @@ class PullbackTrendStrategy(BaseStrategy):
             return Signal(
                 SignalType.HOLD,
                 ticker,
-                f"Setup 미충족 (RSI {rsi_setup:.1f}, BB {bb_pos:.2f})",
+                f"Setup 미충족",
                 0,
             )
 

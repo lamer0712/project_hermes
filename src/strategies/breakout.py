@@ -80,14 +80,14 @@ class BreakoutStrategy(BaseStrategy):
                 return Signal(
                     SignalType.SELL,
                     ticker,
-                    f"RSI overbought {rsi:.1f}",
+                    f"Exit rsi:{rsi} overbought",
                     0.7,
                 )
 
             return Signal(
                 SignalType.HOLD,
                 ticker,
-                "추세 유지",
+                "보유 중, 추세 유지",
                 0,
             )
 
@@ -113,7 +113,7 @@ class BreakoutStrategy(BaseStrategy):
                 return Signal(
                     SignalType.HOLD,
                     ticker,
-                    f"Setup 미충족 [BB width {bb_width:.3f}(<{setup_cfg['bb_width_threshold']}) ADX {adx:.1f}(>{setup_cfg['adx_threshold']})]",
+                    "Setup 미충족",
                     0,
                 )
 

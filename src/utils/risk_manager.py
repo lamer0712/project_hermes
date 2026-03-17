@@ -14,8 +14,8 @@ class RiskManager:
         "trailing_start_pct": 3.0,
         "trailing_stop_pct": 2.0,
         "partial_stop_loss": [
-            {"pct": -3, "strength": 0.5},
-            {"pct": -5, "strength": 1.0},
+            {"pct": -5, "strength": 0.5},
+            {"pct": -10, "strength": 1.0},
         ],
     }
 

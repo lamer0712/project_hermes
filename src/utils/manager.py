@@ -4,6 +4,7 @@ from src.strategies.base import SignalType
 from src.utils.logger import logger
 from src.strategies.strategy_manager import StrategyManager
 from src.utils.risk_manager import RiskManager
+from src.utils.telegram_notifier import TelegramNotifier
 
 
 class ManagerAgent:
@@ -18,6 +19,7 @@ class ManagerAgent:
         self.broker = UpbitBroker()
         self.strategy_manager = StrategyManager()
         self.risk_manager = RiskManager(self.portfolio_manager)
+        self.notifier = TelegramNotifier()
 
         # 시장 Regime에 따른 매핑 (기본값)
         self.strategy_map = {
@@ -68,22 +70,27 @@ class ManagerAgent:
             available_cash = float("inf")
             holdings = {}
 
+        msg_cycle = {
+            "SELL": {k: [] for k in self.strategy_manager.list_strategies()},
+            "BUY": {k: [] for k in self.strategy_manager.list_strategies()},
+        }
         for ticker, market_data in entry_market_data.items():
             current_price = float(market_data.close.iloc[-1])
 
             # 종목별 Regime 판독 및 전략 할당
             ticker_regime = None
             if market_data is not None and not market_data.empty:
-                ticker_regime = self.broker.regime_detect(market_data)
+                ticker_regime = self.broker.regime_detect(ticker, market_data)
 
             target_strategy_name = self.strategy_map.get(ticker_regime, None)
             if target_strategy_name is None:
                 continue
 
             strategy = self.strategy_manager.get_strategy(target_strategy_name)
+            is_hold = holdings and ticker in holdings and holdings[ticker]["volume"] > 0
 
             # 매도 판단 전에 전역 손절/익절/트레일링 스탑 검사 우선
-            if holdings and ticker in holdings and holdings[ticker]["volume"] > 0:
+            if is_hold:
                 risk_signal = self.risk_manager.evaluate_risk(
                     self.name, ticker, current_price
                 )
@@ -100,11 +107,15 @@ class ManagerAgent:
                 ticker_regime,
                 portfolio_info,
             )
-            logger.info(f"{target_strategy_name} - {signal}")
+
+            if is_hold:
+                msg_cycle["SELL"][target_strategy_name].append(signal.__str__())
+            else:
+                msg_cycle["BUY"][target_strategy_name].append(signal.__str__())
 
             # SELL 시그널은 즉시 실행 (보유 종목만)
             if signal and signal.type == SignalType.SELL:
-                if holdings and ticker in holdings and holdings[ticker]["volume"] > 0:
+                if is_hold:
                     self._execute_sell(strategy.name, ticker, current_price, signal)
 
             # BUY 시그널은 후보로 수집 (가장 강한 것만 나중에 실행)
@@ -115,12 +126,23 @@ class ManagerAgent:
                 if available_cash < self.MIN_ORDER_AMOUNT:
                     continue
                 # 이미 보유 중이면 스킵
-                if holdings and ticker in holdings and holdings[ticker]["volume"] > 0:
+                if is_hold:
                     continue
                 # 더 강한 시그널이면 교체
                 if best_buy is None or signal.strength > best_buy[0].strength:
                     best_buy = (signal, market_data)
                     best_buy_strategy = strategy
+
+        for k, m in msg_cycle["SELL"].items():
+            if m:
+                msg = f"SELL | {k}\n"
+                msg += "\n".join(m)
+                self.notifier.send_message(msg)
+        for k, m in msg_cycle["BUY"].items():
+            if m:
+                msg = f"BUY | {k}\n"
+                msg += "\n".join(m)
+                self.notifier.send_message(msg)
 
         # 가장 강한 매수 시그널 1개만 실행
         if best_buy and best_buy_strategy:

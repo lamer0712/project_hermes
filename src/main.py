@@ -75,10 +75,10 @@ def execute_trading_cycle(manager: ManagerAgent):
 
     # 0. Get Advanced Market Data (OHLCV + Indicators) for each Target Coin
     setup_market_data = broker.get_multiple_ohlcv_with_indicators(
-        all_tickers, count=100, interval="minutes/60"
+        all_tickers, count=120, interval="minutes/60"
     )
     entry_market_data = broker.get_multiple_ohlcv_with_indicators(
-        all_tickers, count=20, interval="minutes/15"
+        all_tickers, count=120, interval="minutes/15"
     )
 
     # 교집합만 유지 (둘 다 성공한 경우만)
