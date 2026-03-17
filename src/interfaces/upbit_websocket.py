@@ -59,11 +59,11 @@ class UpbitWebSocketClient:
                                     )
 
                         except asyncio.TimeoutError:
-                            logger.warning("[WebSocket] recv timeout")
+                            # logger.warning("[WebSocket] recv timeout")
                             break
 
             except Exception as e:
-                logger.warning(f"[WebSocket] reconnecting: {e}")
+                # logger.warning(f"[WebSocket] reconnecting: {e}")
                 await asyncio.sleep(3)
 
     def start(self):

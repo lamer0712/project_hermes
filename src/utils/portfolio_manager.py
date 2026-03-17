@@ -38,8 +38,8 @@ class PortfolioManager:
                             "cash": pb["available_cash"],
                             "holdings": {},
                             "initial_capital": pb["allocated_capital"],
-                            "total_trades": 0,
-                            "winning_trades": 0,
+                            "total_trades": pb.get("total_trades", 0),
+                            "winning_trades": pb.get("winning_trades", 0),
                             "is_halted": pb["is_halted"],
                         }
                     else:
@@ -47,6 +47,8 @@ class PortfolioManager:
                         self.portfolios[agent_name]["initial_capital"] = pb[
                             "allocated_capital"
                         ]
+                        self.portfolios[agent_name]["total_trades"] = pb.get("total_trades", self.portfolios[agent_name].get("total_trades", 0))
+                        self.portfolios[agent_name]["winning_trades"] = pb.get("winning_trades", self.portfolios[agent_name].get("winning_trades", 0))
                         self.portfolios[agent_name]["is_halted"] = pb["is_halted"]
 
                     # Convert DB holdings (volume, avg_price, max_price, sl_levels_hit)
@@ -77,6 +79,8 @@ class PortfolioManager:
                     {
                         "allocated_capital": p["initial_capital"],
                         "available_cash": p["cash"],
+                        "total_trades": p.get("total_trades", 0),
+                        "winning_trades": p.get("winning_trades", 0),
                         "is_halted": p["is_halted"],
                     },
                 )
@@ -480,11 +484,22 @@ class PortfolioManager:
             for old_agent in list(self.portfolios.keys()):
                 if old_agent != agent_name:
                     del self.portfolios[old_agent]
+                    self.db.delete_portfolio(old_agent)
 
             self.total_capital = true_total_capital
             allocated_costs = 0.0
 
+            # 3. 신규 및 기존 코인 메타데이터 보존하며 업데이트
+            old_holdings = self.portfolios.get(agent_name, {}).get("holdings", {})
             for ticker, data in coin_holdings.items():
+                if ticker in old_holdings:
+                    # 기존 메타데이터 유지
+                    data["max_price"] = old_holdings[ticker].get("max_price", data["avg_price"])
+                    data["sl_levels_hit"] = old_holdings[ticker].get("sl_levels_hit", [])
+                else:
+                    data["max_price"] = data["avg_price"]
+                    data["sl_levels_hit"] = []
+                
                 self.portfolios[agent_name]["holdings"][ticker] = data
                 allocated_costs += data["total_cost"]
 

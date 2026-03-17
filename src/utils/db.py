@@ -37,11 +37,21 @@ class DatabaseManager:
                     agent_name TEXT PRIMARY KEY,
                     allocated_capital REAL DEFAULT 0,
                     available_cash REAL DEFAULT 0,
+                    total_trades INTEGER DEFAULT 0,
+                    winning_trades INTEGER DEFAULT 0,
                     is_halted BOOLEAN DEFAULT 0,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             ''')
+            
+            # Migration: add columns if they don't exist
+            cursor.execute("PRAGMA table_info(portfolios)")
+            columns = [row[1] for row in cursor.fetchall()]
+            if 'total_trades' not in columns:
+                cursor.execute('ALTER TABLE portfolios ADD COLUMN total_trades INTEGER DEFAULT 0')
+            if 'winning_trades' not in columns:
+                cursor.execute('ALTER TABLE portfolios ADD COLUMN winning_trades INTEGER DEFAULT 0')
             
             # 포트폴리오별 보유 종목 상세 내역
             cursor.execute('''
@@ -77,24 +87,44 @@ class DatabaseManager:
         with self.get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute('''
-                INSERT INTO portfolios (agent_name, allocated_capital, available_cash, is_halted, updated_at)
-                VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
+                INSERT INTO portfolios (agent_name, allocated_capital, available_cash, total_trades, winning_trades, is_halted, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
                 ON CONFLICT(agent_name) DO UPDATE SET
                     allocated_capital=excluded.allocated_capital,
                     available_cash=excluded.available_cash,
+                    total_trades=excluded.total_trades,
+                    winning_trades=excluded.winning_trades,
                     is_halted=excluded.is_halted,
                     updated_at=CURRENT_TIMESTAMP
             ''', (
                 agent_name,
                 data.get("allocated_capital", 0),
                 data.get("available_cash", 0),
+                data.get("total_trades", 0),
+                data.get("winning_trades", 0),
                 1 if data.get("is_halted", False) else 0
             ))
 
     def save_holdings(self, agent_name: str, holdings: dict):
-        """해당 콜에서는 특정 에이전트의 모든 보유 종목을 갱신 (기존 정보 보존 후 upsert)"""
+        """해당 콜에서는 특정 에이전트의 모든 보유 종목을 갱신 (제공된 항목 외 데이터는 삭제)"""
         with self.get_connection() as conn:
             cursor = conn.cursor()
+            
+            # 현재 메모리에 있는 티커 목록
+            active_tickers = list(holdings.keys())
+            
+            # DB에서 이 에이전트의 기존 티커들을 확인하여, holdings에 없는 것은 삭제
+            if active_tickers:
+                placeholders = ', '.join(['?'] * len(active_tickers))
+                cursor.execute(f'''
+                    DELETE FROM holdings 
+                    WHERE agent_name = ? AND ticker NOT IN ({placeholders})
+                ''', [agent_name] + active_tickers)
+            else:
+                # holdings가 비어있다면 해당 에이전트의 모든 보유 종목 삭제
+                cursor.execute('DELETE FROM holdings WHERE agent_name = ?', (agent_name,))
+
+            # 신규/업데이트 데이터 반영
             for ticker, info in holdings.items():
                 if info.get("volume", 0) <= 0:
                     cursor.execute('DELETE FROM holdings WHERE agent_name=? AND ticker=?', (agent_name, ticker))
@@ -129,6 +159,8 @@ class DatabaseManager:
                 state[agent_name] = {
                     "allocated_capital": row['allocated_capital'],
                     "available_cash": row['available_cash'],
+                    "total_trades": row['total_trades'] if 'total_trades' in row.keys() else 0,
+                    "winning_trades": row['winning_trades'] if 'winning_trades' in row.keys() else 0,
                     "is_halted": bool(row['is_halted']),
                     "holdings": {}
                 }
@@ -146,6 +178,14 @@ class DatabaseManager:
                         "sl_levels_hit": json.loads(row['sl_levels_hit'])
                     }
         return state
+
+    def delete_portfolio(self, agent_name: str):
+        """에이전트 정보와 보유 종목을 DB에서 완전히 삭제"""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('DELETE FROM holdings WHERE agent_name = ?', (agent_name,))
+            cursor.execute('DELETE FROM portfolios WHERE agent_name = ?', (agent_name,))
+            logger.info(f"[DB] {agent_name} 포트폴리오 및 대장 삭제 완료")
 
     def record_trade(self, agent_name: str, ticker: str, side: str, volume: float, price: float, executed_funds: float, paid_fee: float):
         """새로운 거래 기록을 추가"""

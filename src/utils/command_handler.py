@@ -93,6 +93,7 @@ class CommandQueueHandler:
 
     def _handle_status(self, params):
         """포트폴리오 상태 메시지를 생성하여 전송합니다."""
+        self.pm.load_state()  # DB에서 최신 정보 로드
         status_msg = self._get_status_message()
         self.notifier.send_message(status_msg)
 
