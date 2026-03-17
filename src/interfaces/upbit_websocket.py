@@ -25,8 +25,8 @@ class UpbitWebSocketClient:
             try:
                 async with websockets.connect(
                     self.URI,
-                    ping_interval=20,
-                    ping_timeout=10,
+                    ping_interval=30,
+                    ping_timeout=20,
                     close_timeout=5,
                     max_size=None,
                 ) as websocket:
@@ -47,14 +47,18 @@ class UpbitWebSocketClient:
                     while self.running:
                         try:
                             data = await asyncio.wait_for(websocket.recv(), timeout=60)
-                            parsed_data = json.loads(data)
+                            parsed_data = json.loads(data.decode("utf-8"))
 
                             ticker = parsed_data.get("code")
                             price = parsed_data.get("trade_price")
 
                             if ticker and price:
-                                for cb in self.callbacks:
-                                    cb(ticker, float(price))
+                                for callback in self.callbacks:
+                                    asyncio.create_task(
+                                        self._run_callback(
+                                            callback, ticker, current_price
+                                        )
+                                    )
 
                         except asyncio.TimeoutError:
                             logger.warning("[WebSocket] recv timeout")
@@ -83,6 +87,12 @@ class UpbitWebSocketClient:
             pass
         finally:
             self.loop.close()
+
+    async def _run_callback(self, callback, ticker, price):
+        try:
+            callback(ticker, price)
+        except Exception as e:
+            logger.error(f"[WebSocket] Callback Error: {e}")
 
     def stop(self):
         """웹소켓 수신을 중지합니다."""
