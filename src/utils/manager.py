@@ -116,6 +116,8 @@ class ManagerAgent:
             # SELL 시그널은 즉시 실행 (보유 종목만)
             if signal and signal.type == SignalType.SELL:
                 if is_hold:
+                    sig_str = signal.__str__()
+                    self.notifier.send_message(f"SELL | {strategy.name} → {sig_str}")
                     self._execute_sell(strategy.name, ticker, current_price, signal)
 
             # BUY 시그널은 후보로 수집 (가장 강한 것만 나중에 실행)
@@ -150,6 +152,8 @@ class ManagerAgent:
             ticker = signal_best.ticker
             current_price = float(market_data_best.close.iloc[-1])
             logger.info(f"🏆 Best Buy | {best_buy_strategy.name} → {signal_best}")
+            sig_str = signal_best.__str__()
+            self.notifier.send_message(f"BUY | {best_buy_strategy.name} → {sig_str}")
             self._execute_buy(
                 best_buy_strategy.name, ticker, current_price, signal_best
             )
