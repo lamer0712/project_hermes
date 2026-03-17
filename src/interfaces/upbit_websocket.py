@@ -4,11 +4,13 @@ import websockets
 import threading
 from src.utils.logger import logger
 
+
 class UpbitWebSocketClient:
     """
     업비트 WebSocket API에 연결하여 타겟 코인들의 실시간 시세를 수신하는 클래스입니다.
     수신된 틱(Tick) 데이터는 등록된 콜백(RiskManager 등)으로 바로 전달됩니다.
     """
+
     URI = "wss://api.upbit.com/websocket/v1"
 
     def __init__(self, tickers: list[str], callbacks: list):
@@ -19,42 +21,48 @@ class UpbitWebSocketClient:
         self.thread = None
 
     async def _connect_and_listen(self):
-        try:
-            async with websockets.connect(self.URI) as websocket:
-                logger.info(f"[WebSocket] 업비트 실시간 웹소켓 연결 성공: {self.tickers}")
-                
-                # 구독 요청
-                subscribe_fmt = [
-                    {"ticket": "project-hermes-ws"},
-                    {"type": "ticker", "codes": self.tickers, "isOnlyRealtime": True}
-                ]
-                await websocket.send(json.dumps(subscribe_fmt))
-                
-                while self.running:
-                    data = await websocket.recv()
-                    parsed_data = json.loads(data)
-                    
-                    if "code" in parsed_data and "trade_price" in parsed_data:
-                        ticker = parsed_data["code"]
-                        current_price = float(parsed_data["trade_price"])
-                        
-                        # 등록된 콜백 호출
-                        for callback in self.callbacks:
-                            try:
-                                callback(ticker, current_price)
-                            except Exception as e:
-                                logger.error(f"[WebSocket] Callback Error: {e}")
-                                
-        except websockets.exceptions.ConnectionClosed as e:
-            logger.warning(f"[WebSocket] 연결 종료: {e}. 잠시 후 재연결 시도 중...")
-            if self.running:
+        while self.running:
+            try:
+                async with websockets.connect(
+                    self.URI,
+                    ping_interval=20,
+                    ping_timeout=10,
+                    close_timeout=5,
+                    max_size=None,
+                ) as websocket:
+
+                    logger.info("[WebSocket] 연결 성공")
+
+                    subscribe_fmt = [
+                        {"ticket": "project-hermes-ws"},
+                        {
+                            "type": "ticker",
+                            "codes": self.tickers,
+                            "isOnlyRealtime": True,
+                        },
+                    ]
+
+                    await websocket.send(json.dumps(subscribe_fmt))
+
+                    while self.running:
+                        try:
+                            data = await asyncio.wait_for(websocket.recv(), timeout=60)
+                            parsed_data = json.loads(data)
+
+                            ticker = parsed_data.get("code")
+                            price = parsed_data.get("trade_price")
+
+                            if ticker and price:
+                                for cb in self.callbacks:
+                                    cb(ticker, float(price))
+
+                        except asyncio.TimeoutError:
+                            logger.warning("[WebSocket] recv timeout")
+                            break
+
+            except Exception as e:
+                logger.warning(f"[WebSocket] reconnecting: {e}")
                 await asyncio.sleep(3)
-                await self._connect_and_listen()
-        except Exception as e:
-            logger.error(f"[WebSocket] 예기치 않은 에러 발생: {e}")
-            if self.running:
-                await asyncio.sleep(5)
-                await self._connect_and_listen()
 
     def start(self):
         """웹소켓 데몬을 별도의 스레드에서 백그라운드로 실행합니다."""
