@@ -26,8 +26,8 @@ class MeanReversionStrategy(BaseStrategy):
                 "panic_drop_pct": -5.0,
             },
             "exit": {
-                "rsi_threshold": 60,
-                "bb_position_threshold": 0.5,
+                "rsi_threshold": 70,
+                "bb_position_threshold": 0.8,
             },
             "position_size_ratio": 0.30,
         }
