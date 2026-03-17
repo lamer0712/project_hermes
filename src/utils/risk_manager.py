@@ -9,13 +9,13 @@ class RiskManager:
     """
 
     risk_params = {
-        "stop_loss_pct": -4.5,
+        "stop_loss_pct": -5.5,
         "take_profit_pct": 12.0,
         "trailing_start_pct": 3.0,
         "trailing_stop_pct": 2.0,
         "partial_stop_loss": [
-            {"pct": -5, "strength": 0.5},
-            {"pct": -10, "strength": 1.0},
+            {"pct": -6, "strength": 0.5},
+            {"pct": -12, "strength": 1.0},
         ],
     }
 

@@ -133,16 +133,16 @@ class ManagerAgent:
                     best_buy = (signal, market_data)
                     best_buy_strategy = strategy
 
-        for k, m in msg_cycle["SELL"].items():
-            if m:
-                msg = f"SELL | {k}\n"
-                msg += "\n".join(m)
-                self.notifier.send_message(msg)
-        for k, m in msg_cycle["BUY"].items():
-            if m:
-                msg = f"BUY | {k}\n"
-                msg += "\n".join(m)
-                self.notifier.send_message(msg)
+        # for k, m in msg_cycle["SELL"].items():
+        #     if m:
+        #         msg = f"SELL | {k}\n"
+        #         msg += "\n".join(m)
+        #         self.notifier.send_message(msg)
+        # for k, m in msg_cycle["BUY"].items():
+        #     if m:
+        #         msg = f"BUY | {k}\n"
+        #         msg += "\n".join(m)
+        #         self.notifier.send_message(msg)
 
         # 가장 강한 매수 시그널 1개만 실행
         if best_buy and best_buy_strategy:
