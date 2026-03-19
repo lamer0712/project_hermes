@@ -394,7 +394,7 @@ class ManagerAgent:
             # 분할 매도 후 잔여 금액이 최소 주문 기준(5,000 KRW) 미만이면 전량 매도
             remaining_volume = held_volume - sell_volume
             remaining_value = remaining_volume * current_price
-            if remaining_value < 5000 and remaining_volume > 0:
+            if remaining_value < self.MIN_ORDER_AMOUNT and remaining_volume > 0:
                 logger.warning(
                     f"⚠️ 잔여 평가액({remaining_value:,.0f} KRW)이 최소 주문 기준 미달 → 전량 매도로 전환"
                 )
@@ -415,7 +415,7 @@ class ManagerAgent:
             # 분할 매도 후 잔여 금액이 최소 주문 기준(5,000 KRW) 미만이면 전량 매도
             remaining_volume = held_volume - sell_volume
             remaining_value = remaining_volume * current_price
-            if remaining_value < 5000 and remaining_volume > 0:
+            if remaining_value < self.MIN_ORDER_AMOUNT and remaining_volume > 0:
                 logger.warning(
                     f"⚠️ 잔여 평가액({remaining_value:,.0f} KRW)이 최소 주문 기준 미달 → 전량 매도로 전환"
                 )
@@ -423,7 +423,7 @@ class ManagerAgent:
 
         estimated_value = sell_volume * current_price
 
-        if estimated_value < 5000:
+        if estimated_value < self.MIN_ORDER_AMOUNT:
             logger.warning(f"⚠️ 매도 예상 평가액({estimated_value:,.0f} KRW) 미달.")
 
             # PM에 팬텀 보유량이 있을 수 있으므로 실제 잔고 확인 후 정리
