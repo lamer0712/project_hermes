@@ -145,7 +145,7 @@ class CommandQueueHandler:
 
         if not ticker:
             self.notifier.send_message("❌ 조회할 티커를 입력해주세요.")
-            self.notifier.send_message(stats.keys())
+            self.notifier.send_message(f"{list(stats.keys())}")
             return
 
         # ManagerAgent에서 최근 stats 가져오기
@@ -155,7 +155,7 @@ class CommandQueueHandler:
             self.notifier.send_message(
                 f"❌ `{ticker}`에 대한 최근 분석 데이터가 없습니다."
             )
-            self.notifier.send_message(stats.keys())
+            self.notifier.send_message(f"{list(stats.keys())}")
             return
 
         t = stat["ticker"]
