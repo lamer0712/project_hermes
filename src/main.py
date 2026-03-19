@@ -173,8 +173,8 @@ def main():
     logger.info(f"⏰ 스케줄러 시작")
     # schedule.every(3).minutes.do(execute_trading_cycle, manager=manager)
     for m in [0, 15, 30, 45]:
-        schedule.every().hour.at(f":{m:02d}:30").do(execute_trading_cycle, manager=manager)
-        
+        schedule.every().hour.at(f"{m:02d}:30").do(execute_trading_cycle, manager=manager)
+
     schedule.every().day.at("00:00").do(
         execute_daily_sync, pm=pm, manager=manager, notifier=notifier
     )
