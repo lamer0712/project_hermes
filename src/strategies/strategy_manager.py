@@ -6,6 +6,8 @@ from src.strategies.base import BaseStrategy
 from src.strategies.pullback_trend import PullbackTrendStrategy
 from src.strategies.mean_reversion import MeanReversionStrategy
 from src.strategies.breakout import BreakoutStrategy
+from src.strategies.bearish import BearishStrategy
+from src.strategies.panic import PanicStrategy
 
 
 class StrategyManager:
@@ -21,6 +23,9 @@ class StrategyManager:
         self.register("PullbackTrend", PullbackTrendStrategy)
         self.register("MeanReversion", MeanReversionStrategy)
         self.register("Breakout", BreakoutStrategy)
+        self.register("Bearish", BearishStrategy)
+        self.register("Panic", PanicStrategy)
+
 
     def __init__(self):
         self._registry: dict[str, tuple[type, dict]] = {}

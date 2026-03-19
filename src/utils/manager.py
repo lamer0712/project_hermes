@@ -24,8 +24,10 @@ class ManagerAgent:
         # 시장 Regime에 따른 매핑 (기본값)
         self.strategy_map = {
             "bullish": "PullbackTrend",
-            # "ranging": "MeanReversion",
+            "ranging": "MeanReversion",
             "volatile": "Breakout",
+            "bearish": "Bearish",
+            "panic": "Panic",
         }
 
     # 업비트 최소 주문 금액
@@ -104,6 +106,15 @@ class ManagerAgent:
 
             target_strategy_name = self.strategy_map.get(ticker_regime, None)
             if target_strategy_name is None:
+                ticker_stats[ticker] = {
+                    "ticker": ticker,
+                    "regime": ticker_regime,
+                    "strategy": "N/A",
+                    "signal_type": "HOLD",
+                    "signal_reason": "N/A",
+                    "signal_strength": 0,
+                    "current_price": current_price
+                }
                 continue
 
             strategy = self.strategy_manager.get_strategy(target_strategy_name)

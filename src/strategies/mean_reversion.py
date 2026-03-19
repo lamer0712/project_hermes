@@ -29,7 +29,7 @@ class MeanReversionStrategy(BaseStrategy):
                 "rsi_threshold": 70,
                 "bb_position_threshold": 0.8,
             },
-            "position_size_ratio": 0.0,
+            "position_size_ratio": 0.3,
         }
 
         if params:
