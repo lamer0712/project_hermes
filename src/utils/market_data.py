@@ -1,7 +1,9 @@
 import time
 import requests
+import concurrent.futures
 from src.utils.logger import logger
 import pandas as pd
+import talib
 
 
 class UpbitMarketData:
@@ -92,7 +94,7 @@ class UpbitMarketData:
         return "ranging"
 
     @staticmethod
-    def regime_detect(df):
+    def regime_detect(ticker: str, df):
         price = df.close.iloc[-1]
 
         ma20 = df.ma_20.iloc[-1]
@@ -104,41 +106,34 @@ class UpbitMarketData:
         high20 = df.high_20.iloc[-1]
         low20 = df.low_20.iloc[-1]
 
-        volume = df.volume.iloc[-1]
-        vol_ma20 = df.volume_ma20.iloc[-1]
-
         ema_now = df.ema_20.iloc[-1]
         ema_prev = df.ema_20.iloc[-5]
 
         volatility = (high20 - low20) / price
         trend_strength = abs(ma20 - ma60) / ma60
-        ema_slope = (ema_now - ema_prev) / price
-        volume_spike = volume > vol_ma20 * 1.8
+        ema_slope = (ema_now - ema_prev) / ema_prev
 
+        # print(
+        #     f"Regime {ticker:<10} | ma20: {ma20:.3f},{ma60:.3f} | rsi(55↑,44↓): {rsi:.3f} | adx: {adx>18} | ema_slope: {ema_slope>0} | volatility: {volatility>0.05} | trend_strength: {trend_strength>0.02}"
+        # )
         # Bullish
-        if (
-            ma20 > ma60 * 1.01
-            and rsi > 55
-            and ema_slope > 0
-            and adx > 20
-            and volume_spike
-        ):
-            return "bullish"
+        # 1. Panic
+        if rsi < 35 and ema_slope < -0.01 and volatility > 0.06 and adx > 20:
+            return "panic"
 
-        # Bearish
-        if (
-            ma20 < ma60 * 0.99
-            and rsi < 45
-            and ema_slope < 0
-            and adx > 20
-            and volume_spike
-        ):
-            return "bearish"
-
-        # Volatile (변동성 크지만 추세 약함)
-        if volatility > 0.07 and trend_strength < 0.02:
+        # 2. Volatile (먼저!)
+        if volatility > 0.05 and trend_strength < 0.015:
             return "volatile"
 
+        # 3. Bullish
+        if ma20 > ma60 * 1.005 and rsi > 55 and ema_slope > 0 and adx > 20:
+            return "bullish"
+
+        # 4. Bearish
+        if ma20 < ma60 * 0.995 and rsi < 45 and ema_slope < 0 and adx > 20:
+            return "bearish"
+
+        # 5. Ranging
         return "ranging"
 
     @classmethod
@@ -226,55 +221,66 @@ class UpbitMarketData:
         high = df["high"]
         low = df["low"]
 
+        # high / low
+        df["high_20"] = high.rolling(20).max()
+        df["low_20"] = low.rolling(20).min()
+
         # Moving averages
         df["ma_9"] = close.rolling(9).mean()
         df["ma_20"] = close.rolling(20).mean()
         df["ma_50"] = close.rolling(50).mean()
         df["ma_60"] = close.rolling(60).mean()
-        df["ma_120"] = close.rolling(120).mean()
-
-        # RSI
-        delta = close.diff()
-        gain = delta.clip(lower=0)
-        loss = -delta.clip(upper=0)
-
-        rs = gain.rolling(14).mean() / loss.rolling(14).mean()
-        df["rsi"] = 100 - (100 / (1 + rs))
-        df["rsi_14"] = df["rsi"]
-
-        ## Bollinger Bands
-        sd = close.rolling(20).std()
-
-        df["bb_mid"] = df["ma_20"]
-        df["bb_upper"] = df["ma_20"] + 2.0 * sd
-        df["bb_lower"] = df["ma_20"] - 2.0 * sd
-        df["bb_position"] = (close - df["bb_lower"]) / (df["bb_upper"] - df["bb_lower"])
-
-        ## Volume Moving Average
         df["volume_ma20"] = df["volume"].rolling(20).mean()
 
+        ## RSI
+        df["rsi_14"] = talib.RSI(close, timeperiod=14)
+
+        ## Bollinger Bands
+        df["bb_upper"], df["bb_mid"], df["bb_lower"] = talib.BBANDS(
+            close, timeperiod=20, nbdevup=2, nbdevdn=2
+        )
+        df["bb_position"] = (close - df["bb_lower"]) / (df["bb_upper"] - df["bb_lower"])
+
         ## ATR
-        tr1 = high - low
-        tr2 = (high - close.shift()).abs()
-        tr3 = (low - close.shift()).abs()
+        df["atr_14"] = talib.ATR(high, low, close, timeperiod=14)
 
-        tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+        ## ADX
+        df["adx_14"] = talib.ADX(high, low, close, timeperiod=14)
+        df["plus_di_14"] = talib.PLUS_DI(high, low, close, timeperiod=14)
+        df["minus_di_14"] = talib.MINUS_DI(high, low, close, timeperiod=14)
 
-        df["atr_14"] = tr.rolling(14).mean()
+        ## EMA
+        df["ema_20"] = talib.EMA(close, timeperiod=20)
 
-        ## high / low
-        df["high_20"] = high.rolling(20).max()
-        df["low_20"] = low.rolling(20).min()
-
-        adx, plus_di, minus_di = cls.calculate_adx(df)
-        df["adx_14"] = adx
-        df["plus_di_14"] = plus_di
-        df["minus_di_14"] = minus_di
-
-        df["ema_20"] = close.ewm(span=20, adjust=False).mean()
-
+        ## Change 5
         df["change_5"] = df["close"].pct_change(5) * 100
         return df
+
+    @classmethod
+    def get_multiple_ohlcv_with_indicators(
+        cls, tickers: list[str], count: int = 100, interval: str = "minutes/15"
+    ) -> dict:
+        results = {}
+        with concurrent.futures.ThreadPoolExecutor(
+            max_workers=min(10, max(1, len(tickers)))
+        ) as executor:
+            future_to_ticker = {
+                executor.submit(
+                    cls.get_ohlcv_with_indicators_new, ticker, count, interval
+                ): ticker
+                for ticker in tickers
+            }
+            for future in concurrent.futures.as_completed(future_to_ticker):
+                ticker = future_to_ticker[future]
+                try:
+                    df = future.result()
+                    if not df.empty:
+                        results[ticker] = df
+                except Exception as exc:
+                    logger.error(
+                        f"[Market Data API] {ticker} generated an exception: {exc}"
+                    )
+        return results
 
     @classmethod
     def get_dynamic_target_coins(cls, top_n: int = 20) -> list:
@@ -362,7 +368,10 @@ class UpbitMarketData:
             stats.sort(key=lambda x: x["total_score"])
 
             # 상위 N개 마켓명 추출
-            top_coins = {s["market"] for s in stats[:top_n]} | {"KRW-BTC", "KRW-ETH"}
+            top_coins = {s["market"] for s in stats[:top_n]} | {
+                "KRW-BTC",
+                "KRW-ETH",
+            }
 
             logger.info(f"[Market Data API] 동적 대상 코인 선정 완료: {top_coins}")
             return list(top_coins)

@@ -28,7 +28,6 @@ from telegram.ext import (
 from src.utils.command_queue import CommandQueue
 from src.utils.logger import logger
 from src.utils.llm_client import get_llm_client
-from src.utils.markdown_io import read_markdown
 from telegram.error import NetworkError
 
 AUTHORIZED_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
@@ -178,7 +177,7 @@ async def cmd_clear(update: Update, context: ContextTypes.DEFAULT_TYPE):
     }
     await context.bot.send_message(
         chat_id=chat_id,
-        text="🧹 모든 로그(*.log)와 거래 내역(trades.md)을 정리하시겠습니까?\n\n'확인' 또는 '취소'로 응답해주세요.",
+        text="🧹 시스템 로그(*.log)를 정리하시겠습니까?\n\n'확인' 또는 '취소'로 응답해주세요.",
     )
 
 
@@ -208,7 +207,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 /resume — 중지된 전체 거래를 재개합니다
 /liquidate [코인심볼] — 특정코인을 시장가로 청산합니다. 예: /liquidate ARDR
 /sync — 업비트 실잔고와 포트폴리오를 동기화합니다
-/clear — 로그 및 거래 내역을 정리합니다
+/clear — 시스템 로그를 정리합니다
 /restart — 시스템을 재시작합니다
 /kill — 시스템을 강제 종료합니다
 
@@ -259,17 +258,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # 3. 그 외 자연어 질문
     # ManagerAgent 대신 직접 상태를 읽어 LLM에 질의
     try:
-        portfolio_state = read_markdown("manager/current_portfolio.md")
-        system_prompt = (
-            "You are the Assistant of an automated investment firm. "
-            "You oversee the current portfolio and AI agents records. "
-            "Answer the User's question clearly, concisely, and professionally in Korean based on the current state."
-        )
-        user_prompt = f"Current State:\n{portfolio_state}\n\nUser Question: {user_text}"
-
         logger.info(f"[Telegram] 답변 생성 중... (User Query: {user_text})")
         llm = get_llm_client()
-        answer = llm.generate_text(system_prompt, user_prompt)
+        answer = llm.generate_text("", user_text)
         if not answer:
             answer = "⚠️ AI 응답 생성 실패: API 연결을 확인해주세요."
     except Exception as e:

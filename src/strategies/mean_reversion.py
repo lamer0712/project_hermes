@@ -26,16 +26,10 @@ class MeanReversionStrategy(BaseStrategy):
                 "panic_drop_pct": -5.0,
             },
             "exit": {
-                "rsi_threshold": 60,
-                "bb_position_threshold": 0.5,
+                "rsi_threshold": 70,
+                "bb_position_threshold": 0.8,
             },
-            "risk": {
-                "stop_loss_pct": -4.0,
-                "take_profit_pct": 7.0,
-                "trailing_start_pct": 2.0,
-                "trailing_stop_pct": 1.5,
-            },
-            "position_size_ratio": 0.30,
+            "position_size_ratio": 0.3,
         }
 
         if params:
@@ -69,7 +63,6 @@ class MeanReversionStrategy(BaseStrategy):
 
         entry_cfg = self.params["entry"]
         exit_cfg = self.params["exit"]
-        risk_cfg = self.params["risk"]
 
         # ------------------------------
         # HOLDING → SELL
@@ -77,7 +70,7 @@ class MeanReversionStrategy(BaseStrategy):
 
         if is_held:
             strength = 0
-            reasons = []
+            reasons = ["Exit"]
 
             if rsi >= exit_cfg["rsi_threshold"]:
                 reasons.append(f"RSI 회복 {rsi:.1f}")
@@ -91,11 +84,11 @@ class MeanReversionStrategy(BaseStrategy):
                 return Signal(
                     SignalType.SELL,
                     ticker,
-                    " | ".join(reasons),
+                    " ".join(reasons),
                     strength,
                 )
 
-            return Signal(SignalType.HOLD, ticker, "보유 유지", 0)
+            return Signal(SignalType.HOLD, ticker, "보유 중, 추세 유지", 0)
 
         # ------------------------------
         # SETUP FILTER (1h)
@@ -114,7 +107,7 @@ class MeanReversionStrategy(BaseStrategy):
                 setup_rsi < setup_cfg["rsi_threshold"]
                 or setup_bb < setup_cfg["bb_position_threshold"]
             ):
-                return Signal(SignalType.HOLD, ticker, "Setup 조건 미충족", 0)
+                return Signal(SignalType.HOLD, ticker, "Setup 미충족", 0)
 
         # ------------------------------
         # ENTRY
