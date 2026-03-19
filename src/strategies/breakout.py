@@ -38,7 +38,7 @@ class BreakoutStrategy(BaseStrategy):
             "exit": {
                 "rsi_threshold": 70,
             },
-            "position_size_ratio": 0.25,
+            "position_size_ratio": 0.5,
         }
 
     def evaluate(

@@ -24,7 +24,7 @@ class ManagerAgent:
         # 시장 Regime에 따른 매핑 (기본값)
         self.strategy_map = {
             "bullish": "PullbackTrend",
-            "ranging": "MeanReversion",
+            # "ranging": "MeanReversion",
             "volatile": "Breakout",
         }
 
@@ -62,32 +62,26 @@ class ManagerAgent:
         best_buy_strategy = None
 
         portfolio_info = None
+        current_prices = {}
         if self.portfolio_manager:
-            portfolio_info = self.portfolio_manager.get_portfolio_summary(self.name)
+            # 보유 종목들의 현재가를 수집하기 위함
+            holdings = self.portfolio_manager.get_holdings(self.name)
+            for ticker in holdings:
+                if ticker in entry_market_data:
+                    current_prices[ticker] = float(entry_market_data[ticker].close.iloc[-1])
+
+            portfolio_info = self.portfolio_manager.get_portfolio_summary(self.name, current_prices=current_prices)
             available_cash = self.portfolio_manager.get_available_cash(self.name)
             holdings = self.portfolio_manager.get_holdings(self.name)
         else:
             available_cash = float("inf")
             holdings = {}
 
-        msg_cycle = {
-            "SELL": {k: [] for k in self.strategy_manager.list_strategies()},
-            "BUY": {k: [] for k in self.strategy_manager.list_strategies()},
-        }
+        ticker_stats = {}
         for ticker, market_data in entry_market_data.items():
             current_price = float(market_data.close.iloc[-1])
-
-            # 종목별 Regime 판독 및 전략 할당
-            ticker_regime = None
-            if market_data is not None and not market_data.empty:
-                ticker_regime = self.broker.regime_detect(ticker, market_data)
-
-            target_strategy_name = self.strategy_map.get(ticker_regime, None)
-            if target_strategy_name is None:
-                continue
-
-            strategy = self.strategy_manager.get_strategy(target_strategy_name)
             is_hold = holdings and ticker in holdings and holdings[ticker]["volume"] > 0
+
 
             # 매도 판단 전에 전역 손절/익절/트레일링 스탑 검사 우선
             if is_hold:
@@ -100,6 +94,21 @@ class ManagerAgent:
                     )
                     continue
 
+            # 종목별 Regime 판독 및 전략 할당
+            ticker_regime = None
+            if market_data is not None and not market_data.empty:
+                try:
+                    ticker_regime = self.broker.regime_detect(ticker, market_data)
+                except Exception as e:
+                    print(ticker, e)
+
+            target_strategy_name = self.strategy_map.get(ticker_regime, None)
+            if target_strategy_name is None:
+                continue
+
+            strategy = self.strategy_manager.get_strategy(target_strategy_name)
+
+
             signal = strategy.evaluate(
                 ticker,
                 setup_market_data.get(ticker),
@@ -108,10 +117,16 @@ class ManagerAgent:
                 portfolio_info,
             )
 
-            if is_hold:
-                msg_cycle["SELL"][target_strategy_name].append(signal.__str__())
-            else:
-                msg_cycle["BUY"][target_strategy_name].append(signal.__str__())
+            # 통계 수집
+            ticker_stats[ticker] = {
+                "ticker": ticker,
+                "regime": ticker_regime,
+                "strategy": target_strategy_name,
+                "signal_type": signal.type.value if signal else "HOLD",
+                "signal_reason": signal.reason if signal else "N/A",
+                "signal_strength": signal.strength if signal else 0,
+                "current_price": current_price
+            }
 
             # SELL 시그널은 즉시 실행 (보유 종목만)
             if signal and signal.type == SignalType.SELL:
@@ -157,6 +172,85 @@ class ManagerAgent:
             self._execute_buy(
                 best_buy_strategy.name, ticker, current_price, signal_best
             )
+
+        # 리포트 전송
+        try:
+            self._send_cycle_report(btc_regime, ticker_stats)
+            # 포트폴리오 상태 파일(portfolio.md) 업데이트
+            if self.portfolio_manager:
+                current_prices = {t: s["current_price"] for t, s in ticker_stats.items()}
+                self.portfolio_manager.export_portfolio_report(self.name, current_prices=current_prices)
+        except Exception as e:
+            logger.error(f"Failed to send cycle report or export portfolio: {e}")
+
+    def _send_cycle_report(self, btc_regime: str, ticker_stats: dict) -> None:
+        """
+        매 싸이클 결과 요약 리포트를 텔레그램으로 전송합니다.
+        """
+        if not self.portfolio_manager:
+            return
+
+        # 최신 가격 정보를 반영한 요약 정보 가져오기
+        current_prices = {t: s["current_price"] for t, s in ticker_stats.items()}
+        summary = self.portfolio_manager.get_portfolio_summary(self.name, current_prices=current_prices)
+        if not summary:
+            return
+
+        # 1. BTC Regime & 기본 자산 정보
+        msg = f"📊 **Hermes Investment Report**\n"
+        msg += f"🌐 BTC Regime: `{btc_regime.upper()}`\n"
+        msg += f"💰 총 자산: `{summary['total_value']:,.0f} KRW`\n"
+        msg += f"💵 현금 자산: `{summary['cash']:,.0f} KRW` ({summary['return_rate']:+.2f}%)\n\n"
+
+        # 2. 보유 종목 투자금, 수익률, 수익금
+        holdings = summary.get("holdings", {})
+        if holdings:
+            msg += "📦 **보유 종목 현황**\n"
+            for ticker, h in holdings.items():
+                price = ticker_stats.get(ticker, {}).get("current_price", h["avg_price"])
+                cost = h["total_cost"]
+                val = h["volume"] * price
+                pnl = val - cost
+                roi = (pnl / cost * 100) if cost > 0 else 0
+                
+                msg += f"• {ticker}: `{cost:,.0f}` → `{roi:+.2f}%` ({pnl:+,.0f})\n"
+            msg += "\n"
+
+        # 3. 전략별 코인 사항 (Regime, Signal)
+        if ticker_stats:
+            msg += "⚙️ **전략별 모니터링 (주요)**\n"
+            # 시그널이 발생한 종목(BUY/SELL) 우선, 그 다음은 강도순
+            sorted_stats = sorted(
+                ticker_stats.values(), 
+                key=lambda x: (x["signal_type"] != "HOLD", x["signal_strength"]), 
+                reverse=True
+            )
+            
+            for stat in sorted_stats[:5]: # 상위 5개만
+                t = stat["ticker"]
+                r = stat["regime"]
+                s = stat["strategy"]
+                st = stat["signal_type"]
+                sr = stat["signal_reason"]
+                msg += f"• {t} [{r}]: {s} → `{st}`\n  └ {sr}\n"
+            msg += "\n"
+
+        # 4. 추가 추천 내용
+        msg += "💡 **AI 추천 & 인사이트**\n"
+        if btc_regime in ["bearish", "panic"]:
+            msg += "⚠️ 시장이 침체기입니다. 현금 비중을 유지하며 보수적으로 접근하세요.\n"
+        elif btc_regime == "bullish":
+            msg += "🚀 시장이 강세입니다. 추세 추종 전략이 유효할 가능성이 큽니다.\n"
+        else:
+            msg += "⏸️ 시장이 횡보 중입니다. 박스권 매매나 돌파를 기다리는 것이 좋습니다.\n"
+            
+        # 가장 높은 강도의 매수 시그널 추천
+        top_buys = sorted([v for v in ticker_stats.values() if v.get("signal_type") == "BUY"], 
+                          key=lambda x: x.get("signal_strength", 0), reverse=True)
+        if top_buys:
+            msg += f"🎯 관심 종목: `{top_buys[0]['ticker']}` (강도: {top_buys[0]['signal_strength']:.0%})\n"
+
+        self.notifier.send_message(msg)
 
     def handle_realtime_tick(self, ticker: str, current_price: float) -> None:
         """웹소켓에서 수신한 실시간 틱 데이터를 바탕으로 긴급 손절/익절을 검사합니다."""

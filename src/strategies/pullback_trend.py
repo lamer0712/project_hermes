@@ -35,7 +35,7 @@ class PullbackTrendStrategy(BaseStrategy):
             "exit": {
                 "rsi_threshold": 65,
             },
-            "position_size_ratio": 0.35,
+            "position_size_ratio": 1.0,
         }
 
     def evaluate(

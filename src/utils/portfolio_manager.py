@@ -406,10 +406,12 @@ class PortfolioManager:
 """
         holdings = summary.get("holdings", {})
         if holdings:
-            md += "| 종목 | 수량 | 평균 매입가 | 매입 총액 |\n"
-            md += "|------|------|-----------|----------|\n"
+            md += "| 종목 | 수량 | 평균 매입가 | **현재가** | 매입 총액 | **수익률** |\n"
+            md += "|------|------|-----------|-----------|----------|---------|\n"
             for ticker, h in holdings.items():
-                md += f"| {ticker} | {h['volume']:.6f} | {h['avg_price']:,.6f} | {h['total_cost']:,.2f} |\n"
+                current_p = current_prices.get(ticker, h["avg_price"]) if current_prices else h["avg_price"]
+                roi = ((current_p - h["avg_price"]) / h["avg_price"] * 100) if h["avg_price"] > 0 else 0
+                md += f"| {ticker} | {h['volume']:.6f} | {h['avg_price']:,.2f} | **{current_p:,.2f}** | {h['total_cost']:,.0f} | **{roi:+.2f}%** |\n"
         else:
             md += "_보유 종목 없음_\n"
 

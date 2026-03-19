@@ -117,17 +117,23 @@ class UpbitMarketData:
         #     f"Regime {ticker:<10} | ma20: {ma20:.3f},{ma60:.3f} | rsi(55↑,44↓): {rsi:.3f} | adx: {adx>18} | ema_slope: {ema_slope>0} | volatility: {volatility>0.05} | trend_strength: {trend_strength>0.02}"
         # )
         # Bullish
-        if ma20 > ma60 * 1.01 and rsi > 55 and ema_slope > 0 and adx > 18:
-            return "bullish"
+        # 1. Panic
+        if rsi < 35 and ema_slope < -0.01 and volatility > 0.06 and adx > 20:
+            return "panic"
 
-        # Bearish
-        if ma20 < ma60 * 0.99 and rsi < 45 and ema_slope < 0 and adx > 18:
-            return "bearish"
-
-        # Volatile
-        if volatility > 0.05 and trend_strength < 0.02:
+        # 2. Volatile (먼저!)
+        if volatility > 0.05 and trend_strength < 0.015:
             return "volatile"
 
+        # 3. Bullish
+        if ma20 > ma60 * 1.005 and rsi > 55 and ema_slope > 0 and adx > 20:
+            return "bullish"
+
+        # 4. Bearish
+        if ma20 < ma60 * 0.995 and rsi < 45 and ema_slope < 0 and adx > 20:
+            return "bearish"
+
+        # 5. Ranging
         return "ranging"
 
     @classmethod
