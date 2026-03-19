@@ -152,7 +152,10 @@ class CommandQueueHandler:
         stat = stats.get(ticker)
 
         if not stat:
-            self.notifier.send_message(f"❌ `{ticker}`에 대한 최근 분석 데이터가 없습니다.")
+            self.notifier.send_message(
+                f"❌ `{ticker}`에 대한 최근 분석 데이터가 없습니다."
+            )
+            self.notifier.send_message(stats.keys())
             return
 
         t = stat["ticker"]
@@ -160,10 +163,10 @@ class CommandQueueHandler:
         s = stat["strategy"]
         st = stat["signal_type"]
         sr = stat["signal_reason"]
-        
+
         msg = f"⚙️ **전략별 모니터링 (개별)**\n"
         msg += f"• {t} [{r}]: {s} → `{st}`\n  └ {sr}\n"
-        
+
         self.notifier.send_message(msg)
 
     # ──────────────────────────────────────────────
