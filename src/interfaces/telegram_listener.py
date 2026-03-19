@@ -123,6 +123,27 @@ async def cmd_liquidate(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
+async def cmd_eval(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    chat_id = str(update.effective_chat.id)
+    if chat_id != AUTHORIZED_CHAT_ID:
+        return
+
+    if len(context.args) < 1:
+        await context.bot.send_message(
+            chat_id=chat_id, text="사용법: /eval [코인심볼]\n예: /eval BTC"
+        )
+        return
+
+    ticker_raw = context.args[0].upper()
+    ticker = f"KRW-{ticker_raw}" if not ticker_raw.startswith("KRW-") else ticker_raw
+
+    CommandQueue.push("eval", {"ticker": ticker})
+    await context.bot.send_message(
+        chat_id=chat_id,
+        text=f"✅ **eval** 명령 접수 ({ticker})\n⏳ 다음 스케줄러 주기에 실행됩니다 (최대 30초 내)",
+    )
+
+
 async def unknown_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """지정되지 않은 명령어를 처리합니다."""
     chat_id = str(update.effective_chat.id)
@@ -210,6 +231,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 /clear — 시스템 로그를 정리합니다
 /restart — 시스템을 재시작합니다
 /kill — 시스템을 강제 종료합니다
+/eval [코인심볼] — 특정 코인의 최신 전략 및 시그널 상태를 조회합니다
 
 명령어 이외의 대화는 Manager Agent가 자연어로 답변합니다!"""
     await context.bot.send_message(chat_id=update.effective_chat.id, text=help_text)
@@ -385,6 +407,7 @@ def run_telegram_listener():
     application.add_handler(CommandHandler("halt", cmd_halt))
     application.add_handler(CommandHandler("resume", cmd_resume))
     application.add_handler(CommandHandler("clear", cmd_clear))
+    application.add_handler(CommandHandler("eval", cmd_eval))
 
     application.add_handler(MessageHandler(filters.COMMAND, unknown_command))
     application.add_handler(

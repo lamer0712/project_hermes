@@ -29,6 +29,9 @@ class ManagerAgent:
             "bearish": "Bearish",
             "panic": "Panic",
         }
+        
+        # 마지막 싸이클의 종목별 평가 결과 저장
+        self.last_ticker_stats = {}
 
     # 업비트 최소 주문 금액
     MIN_ORDER_AMOUNT = 5000
@@ -183,6 +186,9 @@ class ManagerAgent:
             self._execute_buy(
                 best_buy_strategy.name, ticker, current_price, signal_best
             )
+
+        # /eval 조회 등을 위해 최근 평가결과를 저장
+        self.last_ticker_stats = ticker_stats
 
         # 리포트 전송
         try:

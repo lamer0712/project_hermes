@@ -34,6 +34,7 @@ class CommandQueueHandler:
             "halt": self._handle_halt,
             "resume": self._handle_resume,
             "clear": self._handle_clear,
+            "eval": self._handle_eval,
         }
 
     def process(self):
@@ -136,6 +137,32 @@ class CommandQueueHandler:
 
         self.notifier.send_message("🧹 *시스템 로그 정리 완료*")
         logger.info("[System] Logs cleared.")
+
+    def _handle_eval(self, params):
+        """특정 티커의 가장 최근 평가 결과를 전송합니다."""
+        ticker = params.get("ticker", "").upper()
+        if not ticker:
+            self.notifier.send_message("❌ 조회할 티커를 입력해주세요.")
+            return
+
+        # ManagerAgent에서 최근 stats 가져오기
+        stats = getattr(self.manager, "last_ticker_stats", {})
+        stat = stats.get(ticker)
+
+        if not stat:
+            self.notifier.send_message(f"❌ `{ticker}`에 대한 최근 분석 데이터가 없습니다.")
+            return
+
+        t = stat["ticker"]
+        r = stat["regime"]
+        s = stat["strategy"]
+        st = stat["signal_type"]
+        sr = stat["signal_reason"]
+        
+        msg = f"⚙️ **전략별 모니터링 (개별)**\n"
+        msg += f"• {t} [{r}]: {s} → `{st}`\n  └ {sr}\n"
+        
+        self.notifier.send_message(msg)
 
     # ──────────────────────────────────────────────
     # 내부 헬퍼 메서드
