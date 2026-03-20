@@ -108,6 +108,9 @@ def execute_daily_sync(pm, manager, notifier):
     try:
         sync_result = pm.synchronize_balances(manager)
         notifier.send_message(sync_result)
+        
+        # 매일 자정에 7일 지난 과거 DB 거래이력 찌꺼기 삭제 수행
+        pm.clean_old_trade_history(days=7)
     except Exception as e:
         logger.error(f"Daily sync error: {e}")
 

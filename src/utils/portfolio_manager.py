@@ -288,6 +288,28 @@ class PortfolioManager:
             return False
         return self.portfolios[agent_name].get("is_halted", False)
 
+    def clear_trade_history(self) -> bool:
+        """모든 에이전트의 거래 내역(trade_history)을 DB에서 삭제합니다."""
+        try:
+            self.db.clear_trade_history()
+            logger.info("[PortfolioManager] DB의 trade_history 전체 기록을 초기화했습니다.")
+            self.notifier.send_message("🧹 *포트폴리오 과거 거래 내역(trade_history)이 초기화되었습니다.*")
+            return True
+        except Exception as e:
+            logger.error(f"[PortfolioManager] trade_history 삭제 실패: {e}")
+            return False
+
+    def clean_old_trade_history(self, days: int = 7) -> bool:
+        """지정된 기간이 지난 trade_history를 자동 삭제합니다."""
+        try:
+            self.db.delete_old_trade_history(days)
+            logger.info(f"[PortfolioManager] {days}일 지난 과거 거래 내역을 정리했습니다.")
+            self.notifier.send_message(f"🧹 *[Daily Sync] {days}일 이상 경과된 과거 거래 내역이 자동 삭제되었습니다.*")
+            return True
+        except Exception as e:
+            logger.error(f"[PortfolioManager] 자동 삭제 실패: {e}")
+            return False
+
     def update_holding_metadata(
         self,
         agent_name: str,

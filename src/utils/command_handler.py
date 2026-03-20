@@ -128,15 +128,18 @@ class CommandQueueHandler:
             self.notifier.send_message(f"❌ *[manager] 거래 재개 설정 실패*")
 
     def _handle_clear(self, params):
-        """시스템 로그를 정리합니다."""
+        """시스템 로그 및 DB 거래 내역을 정리합니다."""
         # 1. Clear *.log files
         log_files = glob.glob("*.log")
         for log_file in log_files:
             with open(log_file, "w") as f:
                 pass
 
-        self.notifier.send_message("🧹 *시스템 로그 정리 완료*")
-        logger.info("[System] Logs cleared.")
+        # 2. Clear trade_history in DB
+        self.pm.clear_trade_history()
+
+        self.notifier.send_message("🧹 *시스템 로그 및 거래 내역(DB) 정리 완료*")
+        logger.info("[System] Logs and trade history cleared.")
 
     def _handle_eval(self, params):
         """특정 티커의 가장 최근 평가 결과를 전송합니다."""

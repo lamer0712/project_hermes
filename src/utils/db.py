@@ -195,3 +195,20 @@ class DatabaseManager:
                 INSERT INTO trade_history (agent_name, ticker, side, volume, price, executed_funds, paid_fee)
                 VALUES (?, ?, ?, ?, ?, ?, ?)
             ''', (agent_name, ticker, side, volume, price, executed_funds, paid_fee))
+
+    def clear_trade_history(self):
+        """trade_history 테이블의 모든 기록을 삭제"""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('DELETE FROM trade_history')
+            logger.info("[DB] trade_history 테이블 기록 전체 삭제 완료")
+
+    def delete_old_trade_history(self, days: int = 7):
+        """n일 이상 경과한 trade_history 과거 기록을 삭제"""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                DELETE FROM trade_history
+                WHERE timestamp <= datetime('now', ?)
+            ''', (f'-{days} days',))
+            logger.info(f"[DB] {days}일 이상 경과한 trade_history 전체 기록 삭제 완료")
