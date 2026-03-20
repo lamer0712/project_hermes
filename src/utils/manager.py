@@ -24,7 +24,7 @@ class ManagerAgent:
         # 시장 Regime에 따른 매핑 (기본값)
         self.strategy_map = {
             "bullish": "PullbackTrend",
-            "ranging": "Breakout",
+            "ranging": "VWAPReversion",
             "volatile": "MeanReversion",
             "bearish": "Bearish",
             "panic": "Panic",
@@ -301,8 +301,22 @@ class ManagerAgent:
 
             portfolio_value = self.portfolio_manager.get_total_value(self.name)
 
-            base_position_size = portfolio_value / self.MAX_POSITIONS
-            base_position_size = min(base_position_size, available_cash)
+            # =========== (Phase 5) 변동성 포지션 사이징 ===========
+            # 타겟 리스크 = 전체 자산의 2% (한 번 매매에서 감수할 최대 손실 원금 비중)
+            target_risk_pct = 0.02
+            trade_risk_pct = 0.05 # 기본 5% 리스크
+            
+            if atr > 0:
+                atr_pct = (atr / current_price)
+                # dynamic_sl은 ATR의 2.5배. 즉 이 거래의 퍼센트 손실폭은 atr*2.5
+                trade_risk_pct = max(0.03, min(0.15, atr_pct * 2.5))
+            
+            # 투입 기준 자금 = 전체 자산 * (타겟 리스크 / 본 거래의 손실폭)
+            base_position_size = portfolio_value * (target_risk_pct / trade_risk_pct)
+            
+            # 단일 코인 집중 투자(몰빵)를 막기 위해 상한선(MAX_POSITIONS) 적용
+            max_allowed = portfolio_value / self.MAX_POSITIONS
+            base_position_size = min(base_position_size, max_allowed, available_cash)
 
             strength = max(self.MAX_POSITION_RATIO, min(signal.strength, 1.0))
 
@@ -338,6 +352,20 @@ class ManagerAgent:
             atr_pct = (atr / current_price) * 100.0
             stop_loss_pct = -max(3.0, min(15.0, atr_pct * 2.5))
             
+        # =========== (Phase 5) 호가창 불균형(Orderbook Imbalance) 필터 ===========
+        orderbooks = self.broker.get_orderbook(ticker)
+        if orderbooks and len(orderbooks) > 0:
+            ob = orderbooks[0]
+            total_ask = ob.get("total_ask_size", 0)
+            total_bid = ob.get("total_bid_size", 0)
+            
+            # 매도잔량이 매수잔량의 0.7배 미만이면 (위에 뚫을 매물벽이 없이 얇으면)
+            # 마켓메이커가 물량을 아래(Bid)에 깔고 위에서 패대기(Dump)를 칠 확률이 높음. 가짜 돌파 혐의.
+            if total_ask < total_bid * 0.7:
+                logger.warning(f"🚫 [Orderbook Filter] {ticker} 매도 잔고({total_ask:.2f})가 매수 잔고({total_bid:.2f})에 비해 너무 얇습니다. 가짜 돌파 혐의 진입 기각.")
+                return
+
+            
         logger.info(
             f"🟢 매수 실행: {ticker} | 금액: {order_amount:,.0f} KRW | SL: {stop_loss_pct:.1f}% | Target Price: CP {current_price:,.2f} | ATR: {atr:.4f}"
         )
@@ -353,7 +381,7 @@ class ManagerAgent:
             uuid_str = res.get("uuid")
             order_info = None
             if uuid_str:
-                for _ in range(5):
+                for _ in range(20):
                     time.sleep(0.5)
                     order_info = self.broker.get_order(uuid_str)
                     if "error" not in order_info and order_info.get("state") in (
@@ -514,7 +542,7 @@ class ManagerAgent:
             uuid_str = res.get("uuid")
             order_info = None
             if uuid_str:
-                for _ in range(5):
+                for _ in range(20):
                     time.sleep(0.5)
                     order_info = self.broker.get_order(uuid_str)
                     if "error" not in order_info and order_info.get("state") in (

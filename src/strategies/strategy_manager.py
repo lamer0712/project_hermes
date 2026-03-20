@@ -8,6 +8,7 @@ from src.strategies.mean_reversion import MeanReversionStrategy
 from src.strategies.breakout import BreakoutStrategy
 from src.strategies.bearish import BearishStrategy
 from src.strategies.panic import PanicStrategy
+from src.strategies.vwap_reversion import VWAPReversionStrategy
 
 
 class StrategyManager:
@@ -25,6 +26,7 @@ class StrategyManager:
         self.register("Breakout", BreakoutStrategy)
         self.register("Bearish", BearishStrategy)
         self.register("Panic", PanicStrategy)
+        self.register("VWAPReversion", VWAPReversionStrategy)
 
 
     def __init__(self):
