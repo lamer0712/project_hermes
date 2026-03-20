@@ -24,8 +24,8 @@ class ManagerAgent:
         # 시장 Regime에 따른 매핑 (기본값)
         self.strategy_map = {
             "bullish": "PullbackTrend",
-            "ranging": "MeanReversion",
-            "volatile": "Breakout",
+            "ranging": "Breakout",
+            "volatile": "MeanReversion",
             "bearish": "Bearish",
             "panic": "Panic",
         }
@@ -180,11 +180,13 @@ class ManagerAgent:
             signal_best, market_data_best = best_buy
             ticker = signal_best.ticker
             current_price = float(market_data_best.close.iloc[-1])
+            atr = float(market_data_best["atr_14"].iloc[-1]) if "atr_14" in market_data_best else 0.0
+            
             logger.info(f"🏆 Best Buy | {best_buy_strategy.name} → {signal_best}")
             sig_str = signal_best.__str__()
             self.notifier.send_message(f"BUY | {best_buy_strategy.name} → {sig_str}")
             self._execute_buy(
-                best_buy_strategy.name, ticker, current_price, signal_best
+                best_buy_strategy.name, ticker, current_price, signal_best, atr=atr
             )
 
         # /eval 조회 등을 위해 최근 평가결과를 저장
@@ -286,7 +288,7 @@ class ManagerAgent:
             self._execute_sell("RiskManager", ticker, current_price, risk_signal)
 
     def _execute_buy(
-        self, strategy_name: str, ticker: str, current_price: float, signal
+        self, strategy_name: str, ticker: str, current_price: float, signal, atr: float = 0.0
     ) -> None:
         """매수 실행 (PortfolioManager 연동)"""
         if not self.broker.is_configured():
@@ -332,9 +334,12 @@ class ManagerAgent:
             return
 
         stop_loss_pct = self.risk_manager.risk_params.get("stop_loss_pct", -5.0)
-        
+        if atr > 0:
+            atr_pct = (atr / current_price) * 100.0
+            stop_loss_pct = -max(3.0, min(15.0, atr_pct * 2.5))
+            
         logger.info(
-            f"🟢 매수 실행: {ticker} | 금액: {order_amount:,.0f} KRW | SL: {stop_loss_pct}% | Target Price: CP {current_price:,.2f}"
+            f"🟢 매수 실행: {ticker} | 금액: {order_amount:,.0f} KRW | SL: {stop_loss_pct:.1f}% | Target Price: CP {current_price:,.2f} | ATR: {atr:.4f}"
         )
         res = self.broker.place_order(
             ticker,
@@ -385,6 +390,9 @@ class ManagerAgent:
                         executed_funds=executed_funds,
                         paid_fee=paid_fee,
                     )
+                    
+                    if atr > 0:
+                        self.portfolio_manager.update_holding_metadata(self.name, ticker, atr_14=atr)
 
     def _execute_sell(
         self, strategy_name: str, ticker: str, current_price: float, signal

@@ -1,26 +1,53 @@
-# 텔레그램 `/eval` 명령어 기능 구현 결과
+# Walkthrough: Portfolio Logging Improvements
 
-텔레그램 봇을 통해 특정 티커의 최신 전략 및 시그널 상태를 조회할 수 있는 `/eval` 명령어를 구현했습니다.
+This document outlines the specific changes implemented to address the missing metrics in trading logs, which will help us debug poor ROI and fine-tune strategy parameters in the future.
 
-## 변경 사항 요약
+## 1. Changes Made
 
-1. **[ManagerAgent](file:///Users/lamer/Project/stock/project_hermes/src/utils/manager.py#10-538) 상태 저장 추가 ([src/utils/manager.py](file:///Users/lamer/Project/stock/project_hermes/src/utils/manager.py))**
-   - 매 사이클 갱신마다 생성되는 종목별 분석 데이터(`ticker_stats`)를 인스턴스 변수(`self.last_ticker_stats`)에 최신본으로 유지하도록 수정했습니다.
+### A. Strategy Metric Logging Enhancements
 
-2. **명령어 처리 핸들러 추가 ([src/utils/command_handler.py](file:///Users/lamer/Project/stock/project_hermes/src/utils/command_handler.py))**
-   - 큐에 [eval](file:///Users/lamer/Project/stock/project_hermes/src/interfaces/telegram_listener.py#126-145) 명령어가 들어왔을 때 이를 처리하는 [_handle_eval](file:///Users/lamer/Project/stock/project_hermes/src/utils/command_handler.py#141-166) 메서드를 구현했습니다.
-   - `self.manager.last_ticker_stats`에 접근하여, 사용자가 요청한 티커의 정보를 추출하고 `ManagerAgent._send_cycle_report`의 `# 3. 전략별 코인 사항` 영역과 동일한 형식(`• {t} [{r}]: {s} → {st}\n  └ {sr}`)으로 포맷팅하여 텔레그램으로 즉시 회신합니다.
+We discovered that breakout, pullback, and mean reversion strategies were producing logs without their respective indicator values (e.g., just logging "Volume spike" instead of the exact percentage).
 
-3. **텔레그램 리스너 연동 ([src/interfaces/telegram_listener.py](file:///Users/lamer/Project/stock/project_hermes/src/interfaces/telegram_listener.py))**
-   - `/eval [티커]` 메시지를 파싱하여 [CommandQueue](file:///Users/lamer/Project/stock/project_hermes/src/utils/command_handler.py#12-342)에 큐잉할 [cmd_eval](file:///Users/lamer/Project/stock/project_hermes/src/interfaces/telegram_listener.py#126-145) 비동기 함수를 추가했습니다.
-   - `/help` 메뉴에 명령어에 대한 안내를 추가하고, Telegram Application에 CommandHandler로 등록했습니다.
+**Files Modified:**
+- [breakout.py](file:///Users/lamer/Project/stock/project_hermes/src/strategies/breakout.py)
+  - `Upper band breakout` → Now explicitly logs the current price and the targeted upper Bollinger Band value it surpassed.
+  - `Volume spike` → Now calculates and logs the volume percentage versus the 20MA volume.
+  - `Momentum acceleration` → Now logs the exact acceleration percentage compared to the previous tick.
+- [pullback_trend.py](file:///Users/lamer/Project/stock/project_hermes/src/strategies/pullback_trend.py)
+  - `RSI rebound` → Logs the exact RSI entry value that crossed the threshold.
+  - `MA9 breakout` → Logs the current price versus the MA9.
+  - `Volume spike` → Logs the exact volume ratio.
+- [mean_reversion.py](file:///Users/lamer/Project/stock/project_hermes/src/strategies/mean_reversion.py)
+  - `Volume spike` → Updated alongside other existing detailed logs to include the exact volume percentage.
 
-## 테스트 및 검증 방법
-현재 실행 중인 봇에서 다음 명령어를 입력하여 봇을 재가동(`명령 접수 완료 후 텔레그램 내 /restart` 혹은 콘솔 재시작)한 뒤 테스트해 보세요.
+### B. Execution Transparency in the Manager
 
-```
-/eval BTC
-```
+The actual buy execution logs did not previously print the exact current price or the effective Stop-Loss percentage at that exact moment.
 
-정상적으로 입력된 경우 `✅ eval 명령 접수 (KRW-BTC)` 메시지가 나타나며 곧이어 해당 티커의 모니터링 분석 결과가 메시지로 회신됩니다.
-*(만약 최근 사이클의 분석 결과가 없다면 `최근 분석 데이터가 없습니다` 라고 회신됩니다.)*
+**Files Modified:**
+- [manager.py](file:///Users/lamer/Project/stock/project_hermes/src/utils/manager.py)
+  - Updated the log format inside [_execute_buy](file:///Users/lamer/Project/stock/project_hermes/src/utils/manager.py#290-396) to append Stop-Loss % (`SL`) and the exact evaluated target price (`CP`).
+  - Example of new log format:
+    `🟢 매수 실행: KRW-DOOD | 금액: 22,000 KRW | SL: -5.0% | Target Price: CP 5.30`
+
+## 2. Structural & Logic Improvements (Phase 2)
+
+Based on the deep analysis of continuous losses, the following structural improvements were applied to correct the strategy behavior.
+
+### A. Regime-Strategy Remapping ([manager.py](file:///Users/lamer/Project/stock/project_hermes/src/utils/manager.py))
+- **Before**: `volatile` regime used [Breakout](file:///Users/lamer/Project/stock/project_hermes/src/strategies/breakout.py#6-178) strategy. (Buying tops in a choppy market).
+- **After**: `volatile` regime now uses [MeanReversion](file:///Users/lamer/Project/stock/project_hermes/src/strategies/mean_reversion.py#6-154). [Breakout](file:///Users/lamer/Project/stock/project_hermes/src/strategies/breakout.py#6-178) is moved to `ranging` regime where it can grab explosive moves out of tightly consolidated ranges.
+
+### B. Dynamic ATR-based Stop-Loss ([risk_manager.py](file:///Users/lamer/Project/stock/project_hermes/src/utils/risk_manager.py), [manager.py](file:///Users/lamer/Project/stock/project_hermes/src/utils/manager.py))
+- **Before**: Static -5.5% Stop-Loss regardless of coin volatility.
+- **After**: [manager.py](file:///Users/lamer/Project/stock/project_hermes/src/utils/manager.py) fetches the 14-period `ATR` at execution time and saves it as `holding_metadata(atr_14)`. The [RiskManager](file:///Users/lamer/Project/stock/project_hermes/src/utils/risk_manager.py#5-148) evaluates this ATR explicitly and scales the Stop Loss to `ATR * 2.5` (max 15%). The `-6%` and `-12%` partial Stop-Loss steps are dynamically scaled downwards accordingly. This prevents Whipsaw and gives Altcoins room to breathe.
+
+### C. Breakout Chase Filter ([breakout.py](file:///Users/lamer/Project/stock/project_hermes/src/strategies/breakout.py))
+- **Added**: Built-in spike filter. If the 15m candle has already skyrocketed >3% over the previous period, the strategy will block entry and return `HOLD`.
+
+## 3. Validation Results
+
+- The python compilation test (`python -m py_compile`) was executed successfully over all modified strategy and manager scripts to ensure no syntax errors were introduced during string formatting.
+- [task.md](file:///Users/lamer/.gemini/antigravity/brain/82e237f3-b11e-4c8f-b306-e3f731ed2790/task.md) was completed successfully.
+
+With these changes, the backend logs will explicitly display the mathematical thresholds when triggering trades, enabling easy diagnosis of "fakeouts" and tight stop losses.

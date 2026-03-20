@@ -121,6 +121,15 @@ class BreakoutStrategy(BaseStrategy):
         # ENTRY (15m)
         # =========================
 
+        # 과상승 파동 추격 필터: 15분 내 이미 3% 이상 쏜 캔들의 종가에 따라잡는 행위 금지
+        if price > prev_price * 1.03:
+            return Signal(
+                SignalType.HOLD, 
+                ticker, 
+                f"과매수 필터 차단 (급등 {((price-prev_price)/prev_price)*100:.1f}%)", 
+                0
+            )
+
         reasons = []
         strength = 0
 
