@@ -62,6 +62,7 @@ class PortfolioManager:
                             "total_cost": h["volume"] * h["avg_price"],
                             "max_price": h["max_price"],
                             "sl_levels_hit": h["sl_levels_hit"],
+                            "atr_14": h.get("atr_14", 0),
                         }
                     self.portfolios[agent_name]["holdings"] = mem_holdings
 
@@ -186,6 +187,7 @@ class PortfolioManager:
                 "total_cost": new_total,
                 "max_price": existing.get("max_price", price),
                 "sl_levels_hit": existing.get("sl_levels_hit", []),
+                "atr_14": existing.get("atr_14", 0),
             }
         else:
             holdings[ticker] = {
@@ -194,6 +196,7 @@ class PortfolioManager:
                 "total_cost": total_cost_excluding_fee,
                 "max_price": price,
                 "sl_levels_hit": [],
+                "atr_14": 0,
             }
 
         portfolio["total_trades"] = portfolio.get("total_trades", 0) + 1
@@ -291,6 +294,7 @@ class PortfolioManager:
         ticker: str,
         max_price: float = None,
         hit_sl_level: float = None,
+        atr_14: float = None,
     ) -> bool:
         """
         보유 종목의 최대 가격(Trailing Stop용)과 도달한 손절 단계(Partial Stop Loss용)를 업데이트합니다.
@@ -317,6 +321,10 @@ class PortfolioManager:
                 sl_levels.append(hit_sl_level)
                 holding["sl_levels_hit"] = sl_levels
                 modified = True
+
+        if atr_14 is not None:
+            holding["atr_14"] = atr_14
+            modified = True
 
         if modified:
             self.save_state()
@@ -498,9 +506,11 @@ class PortfolioManager:
                     # 기존 메타데이터 유지
                     data["max_price"] = old_holdings[ticker].get("max_price", data["avg_price"])
                     data["sl_levels_hit"] = old_holdings[ticker].get("sl_levels_hit", [])
+                    data["atr_14"] = old_holdings[ticker].get("atr_14", 0)
                 else:
                     data["max_price"] = data["avg_price"]
                     data["sl_levels_hit"] = []
+                    data["atr_14"] = 0
                 
                 self.portfolios[agent_name]["holdings"][ticker] = data
                 allocated_costs += data["total_cost"]
