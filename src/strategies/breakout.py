@@ -46,11 +46,10 @@ class BreakoutStrategy(BaseStrategy):
         ticker: str,
         setup_market_data: pd.DataFrame,
         entry_market_data: pd.DataFrame,
-        regime: str,
         portfolio_info: dict = None,
     ) -> Signal:
 
-        holdings = portfolio_info.get("holdings", {}) if portfolio_info else {}
+        holdings = portfolio_info.get("holdings", {})
         is_held = ticker in holdings and holdings[ticker]["volume"] > 0
 
         if entry_market_data is None or len(entry_market_data) < 20:
@@ -124,10 +123,10 @@ class BreakoutStrategy(BaseStrategy):
         # 과상승 파동 추격 필터: 15분 내 이미 3% 이상 쏜 캔들의 종가에 따라잡는 행위 금지
         if price > prev_price * 1.03:
             return Signal(
-                SignalType.HOLD, 
-                ticker, 
-                f"과매수 필터 차단 (급등 {((price-prev_price)/prev_price)*100:.1f}%)", 
-                0
+                SignalType.HOLD,
+                ticker,
+                f"과매수 필터 차단 (급등 {((price-prev_price)/prev_price)*100:.1f}%)",
+                0,
             )
 
         reasons = []
@@ -142,7 +141,9 @@ class BreakoutStrategy(BaseStrategy):
         if breakout:
             strength += 0.5
             breakout_target = bb_upper * (1 + breakout_buffer)
-            reasons.append(f"Upper band breakout (P:{price:.2f} > BB:{breakout_target:.2f})")
+            reasons.append(
+                f"Upper band breakout (P:{price:.2f} > BB:{breakout_target:.2f})"
+            )
 
         volume_trigger = volume > volume_ma * entry_cfg["volume_multiplier"]
 
@@ -155,7 +156,9 @@ class BreakoutStrategy(BaseStrategy):
 
         if price_acceleration:
             strength += 0.2
-            accel_pct = ((price - prev_price) / prev_price) * 100 if prev_price > 0 else 0
+            accel_pct = (
+                ((price - prev_price) / prev_price) * 100 if prev_price > 0 else 0
+            )
             reasons.append(f"Momentum acceleration ({accel_pct:.2f}%)")
 
         if strength >= 0.6:

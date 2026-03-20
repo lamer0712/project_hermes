@@ -43,7 +43,6 @@ class PullbackTrendStrategy(BaseStrategy):
         ticker: str,
         setup_market_data: pd.DataFrame,
         entry_market_data: pd.DataFrame,
-        regime: str,
         portfolio_info: dict = {},
     ) -> Signal:
 
@@ -124,7 +123,9 @@ class PullbackTrendStrategy(BaseStrategy):
 
         if rsi_cross_trigger:
             strength += 0.4
-            reasons.append(f"RSI rebound ({rsi_entry:.1f} > {self.params['entry']['rsi_threshold']})")
+            reasons.append(
+                f"RSI rebound ({rsi_entry:.1f} > {self.params['entry']['rsi_threshold']})"
+            )
 
         ma_cross = prev_price <= prev_ma9 and current_price > ma9
 

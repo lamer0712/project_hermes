@@ -29,7 +29,7 @@ class ManagerAgent:
             "bearish": "Bearish",
             "panic": "Panic",
         }
-        
+
         # 마지막 싸이클의 종목별 평가 결과 저장
         self.last_ticker_stats = {}
 
@@ -73,9 +73,13 @@ class ManagerAgent:
             holdings = self.portfolio_manager.get_holdings(self.name)
             for ticker in holdings:
                 if ticker in entry_market_data:
-                    current_prices[ticker] = float(entry_market_data[ticker].close.iloc[-1])
+                    current_prices[ticker] = float(
+                        entry_market_data[ticker].close.iloc[-1]
+                    )
 
-            portfolio_info = self.portfolio_manager.get_portfolio_summary(self.name, current_prices=current_prices)
+            portfolio_info = self.portfolio_manager.get_portfolio_summary(
+                self.name, current_prices=current_prices
+            )
             available_cash = self.portfolio_manager.get_available_cash(self.name)
             holdings = self.portfolio_manager.get_holdings(self.name)
         else:
@@ -85,11 +89,10 @@ class ManagerAgent:
         ticker_stats = {}
         for ticker, market_data in entry_market_data.items():
             current_price = float(market_data.close.iloc[-1])
-            is_hold = holdings and ticker in holdings and holdings[ticker]["volume"] > 0
-
+            is_held = ticker in holdings and holdings[ticker]["volume"] > 0
 
             # 매도 판단 전에 전역 손절/익절/트레일링 스탑 검사 우선
-            if is_hold:
+            if is_held:
                 risk_signal = self.risk_manager.evaluate_risk(
                     self.name, ticker, current_price
                 )
@@ -116,18 +119,16 @@ class ManagerAgent:
                     "signal_type": "HOLD",
                     "signal_reason": "N/A",
                     "signal_strength": 0,
-                    "current_price": current_price
+                    "current_price": current_price,
                 }
                 continue
 
             strategy = self.strategy_manager.get_strategy(target_strategy_name)
 
-
             signal = strategy.evaluate(
                 ticker,
                 setup_market_data.get(ticker),
                 market_data,
-                ticker_regime,
                 portfolio_info,
             )
 
@@ -139,12 +140,12 @@ class ManagerAgent:
                 "signal_type": signal.type.value if signal else "HOLD",
                 "signal_reason": signal.reason if signal else "N/A",
                 "signal_strength": signal.strength if signal else 0,
-                "current_price": current_price
+                "current_price": current_price,
             }
 
             # SELL 시그널은 즉시 실행 (보유 종목만)
             if signal and signal.type == SignalType.SELL:
-                if is_hold:
+                if is_held:
                     sig_str = signal.__str__()
                     self.notifier.send_message(f"SELL | {strategy.name} → {sig_str}")
                     self._execute_sell(strategy.name, ticker, current_price, signal)
@@ -157,7 +158,7 @@ class ManagerAgent:
                 if available_cash < self.MIN_ORDER_AMOUNT:
                     continue
                 # 이미 보유 중이면 스킵
-                if is_hold:
+                if is_held:
                     continue
                 # 더 강한 시그널이면 교체
                 if best_buy is None or signal.strength > best_buy[0].strength:
@@ -180,8 +181,12 @@ class ManagerAgent:
             signal_best, market_data_best = best_buy
             ticker = signal_best.ticker
             current_price = float(market_data_best.close.iloc[-1])
-            atr = float(market_data_best["atr_14"].iloc[-1]) if "atr_14" in market_data_best else 0.0
-            
+            atr = (
+                float(market_data_best["atr_14"].iloc[-1])
+                if "atr_14" in market_data_best
+                else 0.0
+            )
+
             logger.info(f"🏆 Best Buy | {best_buy_strategy.name} → {signal_best}")
             sig_str = signal_best.__str__()
             self.notifier.send_message(f"BUY | {best_buy_strategy.name} → {sig_str}")
@@ -197,8 +202,12 @@ class ManagerAgent:
             self._send_cycle_report(btc_regime, ticker_stats)
             # 포트폴리오 상태 파일(portfolio.md) 업데이트
             if self.portfolio_manager:
-                current_prices = {t: s["current_price"] for t, s in ticker_stats.items()}
-                self.portfolio_manager.export_portfolio_report(self.name, current_prices=current_prices)
+                current_prices = {
+                    t: s["current_price"] for t, s in ticker_stats.items()
+                }
+                self.portfolio_manager.export_portfolio_report(
+                    self.name, current_prices=current_prices
+                )
         except Exception as e:
             logger.error(f"Failed to send cycle report or export portfolio: {e}")
 
@@ -211,7 +220,9 @@ class ManagerAgent:
 
         # 최신 가격 정보를 반영한 요약 정보 가져오기
         current_prices = {t: s["current_price"] for t, s in ticker_stats.items()}
-        summary = self.portfolio_manager.get_portfolio_summary(self.name, current_prices=current_prices)
+        summary = self.portfolio_manager.get_portfolio_summary(
+            self.name, current_prices=current_prices
+        )
         if not summary:
             return
 
@@ -226,12 +237,14 @@ class ManagerAgent:
         if holdings:
             msg += "📦 **보유 종목 현황**\n"
             for ticker, h in holdings.items():
-                price = ticker_stats.get(ticker, {}).get("current_price", h["avg_price"])
+                price = ticker_stats.get(ticker, {}).get(
+                    "current_price", h["avg_price"]
+                )
                 cost = h["total_cost"]
                 val = h["volume"] * price
                 pnl = val - cost
                 roi = (pnl / cost * 100) if cost > 0 else 0
-                
+
                 msg += f"• {ticker}: `{cost:,.0f}` → `{roi:+.2f}%` ({pnl:+,.0f})\n"
             msg += "\n"
 
@@ -240,12 +253,12 @@ class ManagerAgent:
             msg += "⚙️ **전략별 모니터링 (주요)**\n"
             # 시그널이 발생한 종목(BUY/SELL) 우선, 그 다음은 강도순
             sorted_stats = sorted(
-                ticker_stats.values(), 
-                key=lambda x: (x["signal_type"] != "HOLD", x["signal_strength"]), 
-                reverse=True
+                ticker_stats.values(),
+                key=lambda x: (x["signal_type"] != "HOLD", x["signal_strength"]),
+                reverse=True,
             )
-            
-            for stat in sorted_stats[:5]: # 상위 5개만
+
+            for stat in sorted_stats[:5]:  # 상위 5개만
                 t = stat["ticker"]
                 r = stat["regime"]
                 s = stat["strategy"]
@@ -257,15 +270,22 @@ class ManagerAgent:
         # 4. 추가 추천 내용
         msg += "💡 **AI 추천 & 인사이트**\n"
         if btc_regime in ["bearish", "panic"]:
-            msg += "⚠️ 시장이 침체기입니다. 현금 비중을 유지하며 보수적으로 접근하세요.\n"
+            msg += (
+                "⚠️ 시장이 침체기입니다. 현금 비중을 유지하며 보수적으로 접근하세요.\n"
+            )
         elif btc_regime == "bullish":
             msg += "🚀 시장이 강세입니다. 추세 추종 전략이 유효할 가능성이 큽니다.\n"
         else:
-            msg += "⏸️ 시장이 횡보 중입니다. 박스권 매매나 돌파를 기다리는 것이 좋습니다.\n"
-            
+            msg += (
+                "⏸️ 시장이 횡보 중입니다. 박스권 매매나 돌파를 기다리는 것이 좋습니다.\n"
+            )
+
         # 가장 높은 강도의 매수 시그널 추천
-        top_buys = sorted([v for v in ticker_stats.values() if v.get("signal_type") == "BUY"], 
-                          key=lambda x: x.get("signal_strength", 0), reverse=True)
+        top_buys = sorted(
+            [v for v in ticker_stats.values() if v.get("signal_type") == "BUY"],
+            key=lambda x: x.get("signal_strength", 0),
+            reverse=True,
+        )
         if top_buys:
             msg += f"🎯 관심 종목: `{top_buys[0]['ticker']}` (강도: {top_buys[0]['signal_strength']:.0%})\n"
 
@@ -288,7 +308,12 @@ class ManagerAgent:
             self._execute_sell("RiskManager", ticker, current_price, risk_signal)
 
     def _execute_buy(
-        self, strategy_name: str, ticker: str, current_price: float, signal, atr: float = 0.0
+        self,
+        strategy_name: str,
+        ticker: str,
+        current_price: float,
+        signal,
+        atr: float = 0.0,
     ) -> None:
         """매수 실행 (PortfolioManager 연동)"""
         if not self.broker.is_configured():
@@ -304,16 +329,16 @@ class ManagerAgent:
             # =========== (Phase 5) 변동성 포지션 사이징 ===========
             # 타겟 리스크 = 전체 자산의 2% (한 번 매매에서 감수할 최대 손실 원금 비중)
             target_risk_pct = 0.02
-            trade_risk_pct = 0.05 # 기본 5% 리스크
-            
+            trade_risk_pct = 0.05  # 기본 5% 리스크
+
             if atr > 0:
-                atr_pct = (atr / current_price)
+                atr_pct = atr / current_price
                 # dynamic_sl은 ATR의 2.5배. 즉 이 거래의 퍼센트 손실폭은 atr*2.5
                 trade_risk_pct = max(0.03, min(0.15, atr_pct * 2.5))
-            
+
             # 투입 기준 자금 = 전체 자산 * (타겟 리스크 / 본 거래의 손실폭)
             base_position_size = portfolio_value * (target_risk_pct / trade_risk_pct)
-            
+
             # 단일 코인 집중 투자(몰빵)를 막기 위해 상한선(MAX_POSITIONS) 적용
             max_allowed = portfolio_value / self.MAX_POSITIONS
             base_position_size = min(base_position_size, max_allowed, available_cash)
@@ -351,21 +376,22 @@ class ManagerAgent:
         if atr > 0:
             atr_pct = (atr / current_price) * 100.0
             stop_loss_pct = -max(3.0, min(15.0, atr_pct * 2.5))
-            
+
         # =========== (Phase 5) 호가창 불균형(Orderbook Imbalance) 필터 ===========
         orderbooks = self.broker.get_orderbook(ticker)
         if orderbooks and len(orderbooks) > 0:
             ob = orderbooks[0]
             total_ask = ob.get("total_ask_size", 0)
             total_bid = ob.get("total_bid_size", 0)
-            
+
             # 매도잔량이 매수잔량의 0.7배 미만이면 (위에 뚫을 매물벽이 없이 얇으면)
             # 마켓메이커가 물량을 아래(Bid)에 깔고 위에서 패대기(Dump)를 칠 확률이 높음. 가짜 돌파 혐의.
             if total_ask < total_bid * 0.7:
-                logger.warning(f"🚫 [Orderbook Filter] {ticker} 매도 잔고({total_ask:.2f})가 매수 잔고({total_bid:.2f})에 비해 너무 얇습니다. 가짜 돌파 혐의 진입 기각.")
+                logger.warning(
+                    f"🚫 [Orderbook Filter] {ticker} 매도 잔고({total_ask:.2f})가 매수 잔고({total_bid:.2f})에 비해 너무 얇습니다. 가짜 돌파 혐의 진입 기각."
+                )
                 return
 
-            
         logger.info(
             f"🟢 매수 실행: {ticker} | 금액: {order_amount:,.0f} KRW | SL: {stop_loss_pct:.1f}% | Target Price: CP {current_price:,.2f} | ATR: {atr:.4f}"
         )
@@ -418,9 +444,11 @@ class ManagerAgent:
                         executed_funds=executed_funds,
                         paid_fee=paid_fee,
                     )
-                    
+
                     if atr > 0:
-                        self.portfolio_manager.update_holding_metadata(self.name, ticker, atr_14=atr)
+                        self.portfolio_manager.update_holding_metadata(
+                            self.name, ticker, atr_14=atr
+                        )
 
     def _execute_sell(
         self, strategy_name: str, ticker: str, current_price: float, signal

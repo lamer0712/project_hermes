@@ -1,37 +1,44 @@
-from .base import Strategy, Signal, SignalType
+from .base import BaseStrategy, Signal, SignalType
 from src.utils.logger import logger
 
-class VWAPReversionStrategy(Strategy):
+
+class VWAPReversionStrategy(BaseStrategy):
     """
     VWAP Reversion Strategy (기관급 눌림목 매매)
-    
+
     일일 누적 VWAP(세력 평단가) 아래로 주가가 이탈했을 때,
     하락 파동이 멈추고 반등하려는 시그널(RSI 과매도 + 볼린저 밴드 하단)에서 진입하여
     VWAP 복귀까지의 단기 반등 수익을 노립니다. (Ranging 시장에 특화)
     """
 
-    def __init__(self, name: str = "VWAPReversion"):
-        super().__init__(name)
+    def __init__(self, params: dict = None):
+        default = self.get_default_params()
+        if params:
+            default.update(params)
+        super().__init__("VWAPReversion", default)
 
     def get_default_params(self) -> dict:
         return {
             "entry": {
-                "vwap_distance_pct": -0.015, # VWAP 대비 최소 1.5% 이탈
-                "rsi_threshold": 35,         # RSI 35 이하 (과매도)
+                "vwap_distance_pct": -0.015,  # VWAP 대비 최소 1.5% 이탈
+                "rsi_threshold": 35,  # RSI 35 이하 (과매도)
             },
             "exit": {
-                "rsi_threshold": 65,         # RSI 65 도달 시 청산 (반등 완료)
-                "vwap_buffer": 0.002,        # VWAP 도달 부근에서 청산 (0.2%)
+                "rsi_threshold": 65,  # RSI 65 도달 시 청산 (반등 완료)
+                "vwap_buffer": 0.002,  # VWAP 도달 부근에서 청산 (0.2%)
             },
-            "position_size_ratio": 1.0,      # 과대낙폭(안전한 자리)이므로 최대 투입 승수
+            "position_size_ratio": 1.0,  # 과대낙폭(안전한 자리)이므로 최대 투입 승수
         }
 
     def evaluate(
-        self, ticker: str, setup_market_data, entry_market_data, holdings: dict
+        self,
+        ticker: str,
+        setup_market_data,
+        entry_market_data,
+        portfolio_info: dict = None,
     ) -> Signal:
-        is_held = False
-        if holdings and ticker in holdings and holdings[ticker]["volume"] > 0:
-            is_held = True
+        holdings = portfolio_info.get("holdings", {})
+        is_held = ticker in holdings and holdings[ticker]["volume"] > 0
 
         df = entry_market_data
         if len(df) < 5 or "vwap" not in df.columns:
@@ -39,7 +46,7 @@ class VWAPReversionStrategy(Strategy):
 
         current_price = df.close.iloc[-1]
         vwap = df.vwap.iloc[-1]
-        
+
         # 0 나누기 방지
         if vwap <= 0:
             return Signal(SignalType.HOLD, ticker, "VWAP < 0", 0)
@@ -51,14 +58,21 @@ class VWAPReversionStrategy(Strategy):
         # EXIT (15m)
         # =========================
         if is_held:
-            vwap_touch = current_price >= vwap * (1.0 - self.params["exit"]["vwap_buffer"])
+            vwap_touch = current_price >= vwap * (
+                1.0 - self.params["exit"]["vwap_buffer"]
+            )
             rsi_overbought = rsi >= self.params["exit"]["rsi_threshold"]
 
             if vwap_touch or rsi_overbought:
                 reason = "VWAP Touch" if vwap_touch else f"RSI {rsi:.1f} Exit"
                 return Signal(SignalType.SELL, ticker, f"Exit: {reason}", 1.0)
-            
-            return Signal(SignalType.HOLD, ticker, f"VWAP 회귀 대기 (Dist: {((current_price-vwap)/vwap)*100:.1f}%)", 0)
+
+            return Signal(
+                SignalType.HOLD,
+                ticker,
+                f"VWAP 회귀 대기 (Dist: {((current_price-vwap)/vwap)*100:.1f}%)",
+                0,
+            )
 
         # =========================
         # ENTRY (15m)
@@ -72,12 +86,12 @@ class VWAPReversionStrategy(Strategy):
                 # 진입 3. 볼린저 밴드 하단 부근에서 패닉셀 흡수
                 if current_price < bb_lower * 1.01:
                     strength = self.params["position_size_ratio"]
-                    
+
                     logger.info(
                         f"🎯 [VWAP Reversion] {ticker} 진입 포착! "
                         f"(VWAP 이격: {distance_to_vwap*100:.1f}%, RSI: {rsi:.1f}, CP: {current_price}, BB_Low: {bb_lower})"
                     )
-                    
+
                     return Signal(
                         SignalType.BUY,
                         ticker,

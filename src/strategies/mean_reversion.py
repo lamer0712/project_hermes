@@ -11,7 +11,16 @@ class MeanReversionStrategy(BaseStrategy):
 
     def __init__(self, params: dict = None):
 
-        default_params = {
+        default_params = self.get_default_params()
+
+        if params:
+            default_params.update(params)
+
+        super().__init__("MeanReversion", default_params)
+
+    def get_default_params(self):
+
+        return {
             "regime": "ranging",
             "setup": {
                 "timeframe": "1h",
@@ -32,21 +41,15 @@ class MeanReversionStrategy(BaseStrategy):
             "position_size_ratio": 0.3,
         }
 
-        if params:
-            default_params.update(params)
-
-        super().__init__("MeanReversion", default_params)
-
     def evaluate(
         self,
         ticker: str,
         setup_market_data: pd.DataFrame,
         entry_market_data: pd.DataFrame,
-        regime: str,
         portfolio_info: dict = None,
     ) -> Signal:
 
-        holdings = portfolio_info.get("holdings", {}) if portfolio_info else {}
+        holdings = portfolio_info.get("holdings", {})
         is_held = ticker in holdings and holdings[ticker]["volume"] > 0
 
         if entry_market_data is None or len(entry_market_data) < 20:

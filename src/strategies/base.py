@@ -42,7 +42,6 @@ class BaseStrategy(ABC):
         ticker: str,
         setup_market_data: "pd.DataFrame",
         entry_market_data: "pd.DataFrame",
-        regime: str,
         portfolio_info: dict = None,
     ) -> Signal:
         """

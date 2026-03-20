@@ -1,6 +1,7 @@
 from src.strategies.base import BaseStrategy, Signal, SignalType
 import pandas as pd
 
+
 class PanicStrategy(BaseStrategy):
     def __init__(self, params=None):
         default = self.get_default_params()
@@ -21,12 +22,18 @@ class PanicStrategy(BaseStrategy):
             "position_size_ratio": 0.1,
         }
 
-    def evaluate(self, ticker, setup_df, entry_df, regime, portfolio_info={}):
+    def evaluate(
+        self,
+        ticker: str,
+        setup_market_data: pd.DataFrame,
+        entry_market_data: pd.DataFrame,
+        portfolio_info: dict = None,
+    ):
         holdings = portfolio_info.get("holdings", {})
         is_held = ticker in holdings and holdings[ticker]["volume"] > 0
 
-        price = float(entry_df.close.iloc[-1])
-        rsi = float(entry_df.rsi_14.iloc[-1])
+        price = float(entry_market_data.close.iloc[-1])
+        rsi = float(entry_market_data.rsi_14.iloc[-1])
         prev_rsi = float(entry_df.rsi_14.iloc[-2])
 
         entry_price = holdings.get(ticker, {}).get("avg_price", 0)
@@ -46,7 +53,10 @@ class PanicStrategy(BaseStrategy):
         # =========================
         # ENTRY → 극단 상황만
         # =========================
-        rebound = rsi > self.params["entry"]["rsi_rebound"] and prev_rsi < self.params["entry"]["rsi_rebound"]
+        rebound = (
+            rsi > self.params["entry"]["rsi_rebound"]
+            and prev_rsi < self.params["entry"]["rsi_rebound"]
+        )
 
         if rebound and rsi < 35:
             return Signal(
