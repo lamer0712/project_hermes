@@ -128,19 +128,20 @@ class PullbackTrendStrategy(BaseStrategy):
 
         if rsi_cross_trigger:
             strength += 0.4
-            reasons.append("RSI rebound")
+            reasons.append(f"RSI rebound ({rsi_entry:.1f} > {self.params['entry']['rsi_threshold']})")
 
         ma_cross = prev_price <= prev_ma9 and current_price > ma9
 
         if ma_cross:
             strength += 0.3
-            reasons.append("MA9 breakout")
+            reasons.append(f"MA9 breakout (P:{current_price:.2f} > MA9:{ma9:.2f})")
 
         volume_trigger = volume > vol_ma * self.params["entry"]["volume_multiplier"]
 
         if volume_trigger:
             strength += 0.3
-            reasons.append("Volume spike")
+            vol_ratio = (volume / vol_ma) * 100 if vol_ma > 0 else 0
+            reasons.append(f"Volume spike ({vol_ratio:.1f}%)")
 
         if strength >= 0.5:
 

@@ -7,3 +7,4 @@ portfolio.md
 current_portfolio.md
 trades.md
 *.db
+.DS_Store

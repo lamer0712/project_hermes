@@ -128,7 +128,8 @@ class MeanReversionStrategy(BaseStrategy):
 
         # volume spike
         if volume > vol_ma * entry_cfg["volume_multiplier"]:
-            reasons.append("Volume spike")
+            vol_ratio = (volume / vol_ma) * 100 if vol_ma > 0 else 0
+            reasons.append(f"Volume spike ({vol_ratio:.1f}%)")
             strength += 0.2
 
         # panic drop

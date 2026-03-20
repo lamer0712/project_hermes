@@ -331,7 +331,11 @@ class ManagerAgent:
             )
             return
 
-        logger.info(f"🟢 매수 실행: {ticker} | 금액: {order_amount:,.0f} KRW")
+        stop_loss_pct = self.risk_manager.risk_params.get("stop_loss_pct", -5.0)
+        
+        logger.info(
+            f"🟢 매수 실행: {ticker} | 금액: {order_amount:,.0f} KRW | SL: {stop_loss_pct}% | Target Price: CP {current_price:,.2f}"
+        )
         res = self.broker.place_order(
             ticker,
             "bid",

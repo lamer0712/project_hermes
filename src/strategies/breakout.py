@@ -132,19 +132,22 @@ class BreakoutStrategy(BaseStrategy):
 
         if breakout:
             strength += 0.5
-            reasons.append("Upper band breakout")
+            breakout_target = bb_upper * (1 + breakout_buffer)
+            reasons.append(f"Upper band breakout (P:{price:.2f} > BB:{breakout_target:.2f})")
 
         volume_trigger = volume > volume_ma * entry_cfg["volume_multiplier"]
 
         if volume_trigger:
             strength += 0.4
-            reasons.append("Volume spike")
+            vol_ratio = (volume / volume_ma) * 100 if volume_ma > 0 else 0
+            reasons.append(f"Volume spike ({vol_ratio:.1f}%)")
 
         price_acceleration = price > prev_price * 1.003
 
         if price_acceleration:
             strength += 0.2
-            reasons.append("Momentum acceleration")
+            accel_pct = ((price - prev_price) / prev_price) * 100 if prev_price > 0 else 0
+            reasons.append(f"Momentum acceleration ({accel_pct:.2f}%)")
 
         if strength >= 0.6:
 
