@@ -36,7 +36,7 @@ class BreakoutStrategy(BaseStrategy):
                 "breakout_buffer": 0.002,
             },
             "exit": {
-                "rsi_threshold": 70,
+                "rsi_threshold": 85,
             },
             "position_size_ratio": 0.5,
         }
@@ -75,13 +75,13 @@ class BreakoutStrategy(BaseStrategy):
         # =========================
 
         if is_held:
-            # RSI 과열
+            # RSI 초강력 과열 (밴드워킹 중 조기 청산 방지)
             if rsi > self.params["exit"]["rsi_threshold"]:
                 return Signal(
                     SignalType.SELL,
                     ticker,
-                    f"Exit rsi:{rsi} overbought",
-                    0.7,
+                    f"Exit rsi:{rsi:.1f} extreme overbought",
+                    0.8,
                 )
 
             return Signal(

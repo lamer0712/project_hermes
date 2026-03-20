@@ -54,6 +54,10 @@ class RiskManager:
         base_stop_loss_pct = self.risk_params.get("stop_loss_pct", -5.5)
         base_partial_sl = self.risk_params.get("partial_stop_loss", [])
         
+        take_profit_pct = self.risk_params.get("take_profit_pct", 10.0)
+        trailing_stop_pct = self.risk_params.get("trailing_stop_pct", None)
+        trailing_start_pct = self.risk_params.get("trailing_start_pct", 1.0)
+
         atr_14 = holdings[ticker].get("atr_14", 0)
         if atr_14 > 0 and avg_price > 0:
             atr_pct = (atr_14 / avg_price) * 100.0
@@ -62,6 +66,11 @@ class RiskManager:
             scale_ratio = dynamic_sl / base_stop_loss_pct if base_stop_loss_pct < 0 else 1.0
             
             stop_loss_pct = dynamic_sl
+            take_profit_pct *= scale_ratio
+            if trailing_stop_pct is not None:
+                trailing_stop_pct *= scale_ratio
+            trailing_start_pct *= scale_ratio
+
             partial_stop_loss_list = []
             for item in base_partial_sl:
                 partial_stop_loss_list.append({
@@ -71,10 +80,6 @@ class RiskManager:
         else:
             stop_loss_pct = base_stop_loss_pct
             partial_stop_loss_list = base_partial_sl.copy()
-
-        take_profit_pct = self.risk_params.get("take_profit_pct", 10.0)
-        trailing_stop_pct = self.risk_params.get("trailing_stop_pct", None)
-        trailing_start_pct = self.risk_params.get("trailing_start_pct", 1.0)
         
         partial_stop_loss = sorted(
             partial_stop_loss_list,

@@ -33,7 +33,7 @@ class PullbackTrendStrategy(BaseStrategy):
                 "volume_multiplier": 1.4,
             },
             "exit": {
-                "rsi_threshold": 65,
+                "rsi_threshold": 80,
             },
             "position_size_ratio": 1.0,
         }
@@ -69,16 +69,12 @@ class PullbackTrendStrategy(BaseStrategy):
         if is_held:
             rsi_sell = rsi_entry > self.params["exit"]["rsi_threshold"]
 
-            bb_upper_touch = current_price > entry_market_data.bb_upper.iloc[-1]
-
-            if rsi_sell or bb_upper_touch:
-
+            if rsi_sell:
                 strength = min((rsi_entry - 60) / 40 + 0.5, 1.0)
-
                 return Signal(
                     SignalType.SELL,
                     ticker,
-                    f"Exit rsi:{rsi_sell}, bb:{bb_upper_touch}",
+                    f"Exit rsi:{rsi_entry:.1f} overbought",
                     strength,
                 )
 
