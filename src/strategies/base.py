@@ -22,7 +22,7 @@ class Signal:
 
     def __str__(self):
         emoji = {"BUY": "🟢", "SELL": "🔴", "HOLD": "⏸️"}
-        return f"\t{self.ticker:}\r\t\t\t\t{emoji.get(self.type.value, '❓')}{self.type.value:<4} (strength: {self.strength:.0%}) | {self.reason}"
+        return f"{emoji.get(self.type.value, '❓')}{self.type.value:<4} {self.ticker} | (S: {self.strength:.0%} , {self.reason})"
 
 
 class BaseStrategy(ABC):

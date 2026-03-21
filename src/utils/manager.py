@@ -194,9 +194,10 @@ class ManagerAgent:
                 else 0.0
             )
 
-            logger.info(f"🏆 Best Buy | {best_buy_strategy.name} → {signal_best}")
             sig_str = signal_best.__str__()
-            self.notifier.send_message(f"BUY | {best_buy_strategy.name} → {sig_str}")
+            log = f"🟢 Stretegy : {best_buy_strategy.name}\n{sig_str}"
+            logger.info(log)
+            self.notifier.send_message(log)
             self._execute_buy(
                 best_buy_strategy.name, ticker, current_price, signal_best, atr=atr
             )
