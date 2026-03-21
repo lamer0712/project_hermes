@@ -97,9 +97,11 @@ class ManagerAgent:
                     self.name, ticker, current_price
                 )
                 if risk_signal:
-                    self._execute_sell(
-                        "RiskManager", ticker, current_price, risk_signal
-                    )
+                    risk_signal_str = risk_signal.__str__()
+                    log = f"⚡[Risk Manager]\n{risk_signal_str}"
+                    logger.warning(log)
+                    self.notifier.send_message(log)
+                    self._execute_sell(ticker, current_price, risk_signal)
                     continue
 
             # 종목별 Regime 판독 및 전략 할당
@@ -155,7 +157,7 @@ class ManagerAgent:
                 if is_held:
                     sig_str = signal.__str__()
                     self.notifier.send_message(f"SELL | {strategy.name} → {sig_str}")
-                    self._execute_sell(strategy.name, ticker, current_price, signal)
+                    self._execute_sell(ticker, current_price, signal)
 
             # BUY 시그널은 후보로 수집 (가장 강한 것만 나중에 실행)
             elif signal and signal.type == SignalType.BUY:
@@ -298,12 +300,10 @@ class ManagerAgent:
         risk_signal = self.risk_manager.evaluate_risk(self.name, ticker, current_price)
         if risk_signal:
             risk_signal_str = risk_signal.__str__()
-            log = (
-                f"⚡ [Realtime Risk Hook] {ticker} @ {current_price}\n{risk_signal_str}"
-            )
+            log = f"⚡[Realtime Risk Hook]\n{risk_signal_str}"
             logger.warning(log)
             self.notifier.send_message(log)
-            self._execute_sell("RiskManager", ticker, current_price, risk_signal)
+            self._execute_sell(ticker, current_price, risk_signal)
 
     def _execute_buy(
         self,
@@ -447,9 +447,7 @@ class ManagerAgent:
                             self.name, ticker, atr_14=atr
                         )
 
-    def _execute_sell(
-        self, strategy_name: str, ticker: str, current_price: float, signal
-    ) -> None:
+    def _execute_sell(self, ticker: str, current_price: float, signal) -> None:
         """매도 실행 (PortfolioManager 연동)"""
         if not self.broker.is_configured():
             return
