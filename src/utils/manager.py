@@ -123,27 +123,27 @@ class ManagerAgent:
                 }
                 continue
 
-            best_signal = None
+            signal = None
+            strategy = None
             for strategy_name in target_strategy_names:
-                strategy = self.strategy_manager.get_strategy(strategy_name)
+                strategy_tmp = self.strategy_manager.get_strategy(strategy_name)
 
-                signal = strategy.evaluate(
+                signal_tmp = strategy_tmp.evaluate(
                     ticker,
                     setup_market_data.get(ticker),
                     market_data,
                     portfolio_info,
                 )
 
-                if best_signal is None or signal.strength > best_signal.strength:
-                    best_signal = signal
-                    target_strategy_name = strategy_name
-            signal = best_signal
+                if signal is None or signal_tmp.strength > signal.strength:
+                    signal = signal_tmp
+                    strategy = strategy_tmp
 
             # 통계 수집
             ticker_stats[ticker] = {
                 "ticker": ticker,
                 "regime": ticker_regime,
-                "strategy": target_strategy_name,
+                "strategy": strategy.name,
                 "signal_type": signal.type.value if signal else "HOLD",
                 "signal_reason": signal.reason if signal else "N/A",
                 "signal_strength": signal.strength if signal else 0,
@@ -172,17 +172,6 @@ class ManagerAgent:
                     best_buy = (signal, market_data)
                     best_buy_strategy = strategy
 
-        # for k, m in msg_cycle["SELL"].items():
-        #     if m:
-        #         msg = f"SELL | {k}\n"
-        #         msg += "\n".join(m)
-        #         self.notifier.send_message(msg)
-        # for k, m in msg_cycle["BUY"].items():
-        #     if m:
-        #         msg = f"BUY | {k}\n"
-        #         msg += "\n".join(m)
-        #         self.notifier.send_message(msg)
-
         # 가장 강한 매수 시그널 1개만 실행
         if best_buy and best_buy_strategy:
             signal_best, market_data_best = best_buy
@@ -198,9 +187,7 @@ class ManagerAgent:
             log = f"🟢 Stretegy : {best_buy_strategy.name}\n{sig_str}"
             logger.info(log)
             self.notifier.send_message(log)
-            self._execute_buy(
-                best_buy_strategy.name, ticker, current_price, signal_best, atr=atr
-            )
+            self._execute_buy(ticker, current_price, signal_best, atr=atr)
 
         # /eval 조회 등을 위해 최근 평가결과를 저장
         self.last_ticker_stats = ticker_stats
@@ -317,7 +304,6 @@ class ManagerAgent:
 
     def _execute_buy(
         self,
-        strategy_name: str,
         ticker: str,
         current_price: float,
         signal,
