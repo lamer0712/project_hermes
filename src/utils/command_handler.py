@@ -260,13 +260,9 @@ class CommandQueueHandler:
         res = broker.place_order(
             ticker, "ask", volume=str(sell_volume), ord_type="market"
         )
-        logger.info(res.json())
+        # logger.info(res)
 
         if res and "error" not in res:
-            holdings = self.pm.get_holdings(agent_name)
-            pm_volume = holdings.get(ticker, {}).get("volume", actual_balance)
-            logger.info(res.json())
-
             return f"✅ 청산 완료\n종목: {ticker}\n수량: {actual_balance:.6f}\n결과: 시장가 전량 매도 성공"
         else:
             err_val = res.get("error", {}) if isinstance(res, dict) else {}
