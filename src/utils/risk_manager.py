@@ -11,8 +11,8 @@ class RiskManager:
     risk_params = {
         "stop_loss_pct": -5.5,
         "take_profit_pct": 12.0,
-        "trailing_start_pct": 3.0,
-        "trailing_stop_pct": 2.0,
+        "trailing_start_pct": 5.0,
+        "trailing_stop_pct": 3.5,
         "partial_stop_loss": [
             {"pct": -6, "strength": 0.5},
             {"pct": -12, "strength": 1.0},
@@ -49,11 +49,11 @@ class RiskManager:
             max_price = current_price
 
         profit_pct = (current_price - avg_price) / avg_price * 100.0
-        
+
         # 기본 Parameter 로드
         base_stop_loss_pct = self.risk_params.get("stop_loss_pct", -5.5)
         base_partial_sl = self.risk_params.get("partial_stop_loss", [])
-        
+
         take_profit_pct = self.risk_params.get("take_profit_pct", 10.0)
         trailing_stop_pct = self.risk_params.get("trailing_stop_pct", None)
         trailing_start_pct = self.risk_params.get("trailing_start_pct", 1.0)
@@ -62,25 +62,17 @@ class RiskManager:
         if atr_14 > 0 and avg_price > 0:
             atr_pct = (atr_14 / avg_price) * 100.0
             # 동적 스탑로스: ATR의 2.5배 (최소 3%, 최대 15%)
-            dynamic_sl = -max(3.0, min(15.0, atr_pct * 2.5))
-            scale_ratio = dynamic_sl / base_stop_loss_pct if base_stop_loss_pct < 0 else 1.0
-            
-            stop_loss_pct = dynamic_sl
-            take_profit_pct *= scale_ratio
-            if trailing_stop_pct is not None:
-                trailing_stop_pct *= scale_ratio
-            trailing_start_pct *= scale_ratio
+            stop_loss_pct = -max(3.0, min(15.0, atr_pct * 2.5))
 
             partial_stop_loss_list = []
             for item in base_partial_sl:
-                partial_stop_loss_list.append({
-                    "pct": item["pct"] * scale_ratio,
-                    "strength": item["strength"]
-                })
+                partial_stop_loss_list.append(
+                    {"pct": item["pct"], "strength": item["strength"]}
+                )
         else:
             stop_loss_pct = base_stop_loss_pct
             partial_stop_loss_list = base_partial_sl.copy()
-        
+
         partial_stop_loss = sorted(
             partial_stop_loss_list,
             key=lambda x: x["pct"],
@@ -112,7 +104,7 @@ class RiskManager:
                 type=SignalType.SELL,
                 ticker=ticker,
                 reason=f"강제 익절 (수익률 {profit_pct:.2f}%)",
-                strength=1.0,
+                strength=0.5,
             )
 
         # 3. 분할 강제 손절
