@@ -39,10 +39,10 @@ _pending_confirm = {}
 async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = str(update.effective_chat.id)
     logger.info(
-        f"[Debug] cmd_status called. incoming_chat_id: '{chat_id}', AUTHORIZED_CHAT_ID: '{AUTHORIZED_CHAT_ID}'"
+        f"[Debug] cmd_status called. incoming_chat_id: '{chat_id}, AUTHORIZED_CHAT_ID: '{AUTHORIZED_CHAT_ID}"
     )
     if chat_id != AUTHORIZED_CHAT_ID:
-        logger.info(f"[Debug] Rejected: chat_id '{chat_id}' != '{AUTHORIZED_CHAT_ID}'")
+        logger.info(f"[Debug] Rejected: chat_id '{chat_id} != '{AUTHORIZED_CHAT_ID}")
         return
 
     if context.args:
@@ -241,10 +241,10 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """/help 커맨드 처리"""
     chat_id = str(update.effective_chat.id)
     logger.info(
-        f"[Debug] help_command called. incoming_chat_id: '{chat_id}', AUTHORIZED_CHAT_ID: '{AUTHORIZED_CHAT_ID}'"
+        f"[Debug] help_command called. incoming_chat_id: '{chat_id}, AUTHORIZED_CHAT_ID: '{AUTHORIZED_CHAT_ID}"
     )
     if chat_id != AUTHORIZED_CHAT_ID:
-        logger.info(f"[Debug] Rejected: chat_id '{chat_id}' != '{AUTHORIZED_CHAT_ID}'")
+        logger.info(f"[Debug] Rejected: chat_id '{chat_id} != '{AUTHORIZED_CHAT_ID}")
         return
     await start(update, context)
 

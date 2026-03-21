@@ -20,8 +20,8 @@ class VWAPReversionStrategy(BaseStrategy):
     def get_default_params(self) -> dict:
         return {
             "entry": {
-                "vwap_distance_pct": -0.015,  # VWAP 대비 최소 1.5% 이탈
-                "rsi_threshold": 35,  # RSI 35 이하 (과매도)
+                "vwap_distance_pct": -0.008,  # VWAP 대비 최소 0.8% 이탈
+                "rsi_threshold": 38,  # RSI 38 이하 (과매도)
             },
             "exit": {
                 "rsi_threshold": 65,  # RSI 65 도달 시 청산 (반등 완료)
@@ -82,21 +82,22 @@ class VWAPReversionStrategy(BaseStrategy):
         # 진입 1. 가격이 VWAP 대비 충분히 폭락(-1.5% 이상)
         if distance_to_vwap <= self.params["entry"]["vwap_distance_pct"]:
             # 진입 2. RSI 과매도 구간
-            if rsi <= self.params["entry"]["rsi_threshold"]:
-                # 진입 3. 볼린저 밴드 하단 부근에서 패닉셀 흡수
-                if current_price < bb_lower * 1.01:
-                    strength = self.params["position_size_ratio"]
+            if (
+                rsi < self.params["entry"]["rsi_threshold"]
+                or current_price < bb_lower * 1.02
+            ):
+                strength = self.params["position_size_ratio"]
 
-                    logger.info(
-                        f"🎯 [VWAP Reversion] {ticker} 진입 포착! "
-                        f"(VWAP 이격: {distance_to_vwap*100:.1f}%, RSI: {rsi:.1f}, CP: {current_price}, BB_Low: {bb_lower})"
-                    )
+                # logger.info(
+                #     f"🎯 [VWAP Reversion] {ticker} 진입 포착! "
+                #     f"(VWAP 이격: {distance_to_vwap*100:.1f}%, RSI: {rsi:.1f}, CP: {current_price}, BB_Low: {bb_lower})"
+                # )
 
-                    return Signal(
-                        SignalType.BUY,
-                        ticker,
-                        f"VWAP Dip (Dist: {distance_to_vwap*100:.1f}%, RSI: {rsi:.1f})",
-                        strength,
-                    )
+                return Signal(
+                    SignalType.BUY,
+                    ticker,
+                    f"VWAP Dip (Dist: {distance_to_vwap*100:.1f}%, RSI: {rsi:.1f}), CP: {current_price}, BB_Low: {bb_lower})",
+                    strength,
+                )
 
         return Signal(SignalType.HOLD, ticker, "대기", 0)

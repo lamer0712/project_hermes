@@ -24,8 +24,8 @@ class PullbackTrendStrategy(BaseStrategy):
             "regime": "bullish",
             "setup": {
                 "timeframe": "1h",
-                "rsi_threshold": 42,
-                "bb_position_threshold": 0.45,
+                "rsi_threshold": 50,
+                "bb_position_threshold": 0.6,
             },
             "entry": {
                 "timeframe": "15m",
@@ -98,16 +98,8 @@ class PullbackTrendStrategy(BaseStrategy):
         setup_ok = (
             rsi_setup < setup_cfg["rsi_threshold"]
             and bb_pos < setup_cfg["bb_position_threshold"]
-            and setup_price < ma20
+            # and setup_price < ma20
         )
-
-        if not setup_ok:
-            return Signal(
-                SignalType.HOLD,
-                ticker,
-                f"Setup 미충족",
-                0,
-            )
 
         # =========================
         # ENTRY (15m)
@@ -140,7 +132,7 @@ class PullbackTrendStrategy(BaseStrategy):
             vol_ratio = (volume / vol_ma) * 100 if vol_ma > 0 else 0
             reasons.append(f"Volume spike ({vol_ratio:.1f}%)")
 
-        if strength >= 0.5:
+        if setup_ok and strength >= 0.5:
 
             size_ratio = self.params["position_size_ratio"]
 
@@ -151,9 +143,29 @@ class PullbackTrendStrategy(BaseStrategy):
                 strength * size_ratio,
             )
 
+        strong_breakout = (
+            current_price > prev_price * 1.02
+            and volume > vol_ma * 2
+            and rsi_entry > 50
+            and current_price > ma9
+            and not (prev_price > entry_market_data.close.iloc[-3])
+        )
+
+        if strong_breakout:
+            return Signal(
+                SignalType.BUY,
+                ticker,
+                "Strong breakout",
+                0.7,
+            )
+
         return Signal(
             SignalType.HOLD,
             ticker,
-            f"Entry 대기 {strength}>0.5, reasons: {reasons}",
+            (
+                f"Entry 대기 {strength}>0.5, reasons: {reasons}"
+                if setup_ok
+                else "Setup 미충족"
+            ),
             0,
         )

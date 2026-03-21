@@ -34,7 +34,7 @@ class PanicStrategy(BaseStrategy):
 
         price = float(entry_market_data.close.iloc[-1])
         rsi = float(entry_market_data.rsi_14.iloc[-1])
-        prev_rsi = float(entry_df.rsi_14.iloc[-2])
+        prev_rsi = float(entry_market_data.rsi_14.iloc[-2])
 
         entry_price = holdings.get(ticker, {}).get("avg_price", 0)
 

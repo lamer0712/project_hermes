@@ -30,9 +30,9 @@ class MeanReversionStrategy(BaseStrategy):
             "entry": {
                 "timeframe": "15m",
                 "rsi_threshold": 30,
-                "bb_lower_threshold": -0.15,
+                "bb_lower_threshold": 0.1,
                 "volume_multiplier": 1.5,
-                "panic_drop_pct": -5.0,
+                "panic_drop_pct": -0.05,
             },
             "exit": {
                 "rsi_threshold": 70,
@@ -115,42 +115,37 @@ class MeanReversionStrategy(BaseStrategy):
         # ------------------------------
         # ENTRY
         # ------------------------------
+        prev_price = entry_market_data.close.iloc[-2]
 
-        strength = 0
+        # 반등 확인
+        if price <= prev_price:
+            return Signal(SignalType.HOLD, ticker, "하락 중", 0)
+
+        conditions = 0
         reasons = []
 
-        # RSI oversold
         if rsi < entry_cfg["rsi_threshold"]:
-            reasons.append(f"RSI 과매도 {rsi:.1f}")
-            strength += 0.4
+            conditions += 1
+            reasons.append(f"RSI {rsi:.1f}")
 
-        # BB deep break
         if bb_position < entry_cfg["bb_lower_threshold"]:
-            reasons.append(f"BB 하단 이탈 {bb_position:.2f}")
-            strength += 0.4
+            conditions += 1
+            reasons.append(f"BB {bb_position:.2f}")
 
-        # volume spike
         if volume > vol_ma * entry_cfg["volume_multiplier"]:
-            vol_ratio = (volume / vol_ma) * 100 if vol_ma > 0 else 0
-            reasons.append(f"Volume spike ({vol_ratio:.1f}%)")
-            strength += 0.2
+            conditions += 1
+            reasons.append("Volume")
 
-        # panic drop
         if change_5 < entry_cfg["panic_drop_pct"]:
-            reasons.append(f"Panic drop {change_5:.1f}%")
-            strength += 0.3
+            conditions += 1
+            reasons.append(f"Drop {change_5:.2f}")
 
-        if strength >= 0.5:
-
-            size_ratio = self.params["position_size_ratio"]
-
+        if conditions >= 2:
             return Signal(
                 SignalType.BUY,
                 ticker,
                 " | ".join(reasons),
-                strength * size_ratio,
+                0.6 * self.params["position_size_ratio"],
             )
 
-        return Signal(
-            SignalType.HOLD, ticker, f"Entry 대기 {strength}>0.5, reasons: {reasons}", 0
-        )
+        return Signal(SignalType.HOLD, ticker, f"Entry 대기, reasons: {reasons}", 0)

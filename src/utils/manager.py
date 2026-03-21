@@ -23,11 +23,11 @@ class ManagerAgent:
 
         # 시장 Regime에 따른 매핑 (기본값)
         self.strategy_map = {
-            "bullish": "PullbackTrend",
-            "ranging": "VWAPReversion",
-            "volatile": "MeanReversion",
-            "bearish": "Bearish",
-            "panic": "Panic",
+            "bullish": ["Breakout", "PullbackTrend"],
+            "ranging": ["VWAPReversion", "MeanReversion"],
+            "volatile": ["Breakout"],
+            "bearish": ["Bearish"],
+            "panic": ["Panic"],
         }
 
         # 마지막 싸이클의 종목별 평가 결과 저장
@@ -110,8 +110,8 @@ class ManagerAgent:
                 except Exception as e:
                     print(ticker, e)
 
-            target_strategy_name = self.strategy_map.get(ticker_regime, None)
-            if target_strategy_name is None:
+            target_strategy_names = self.strategy_map.get(ticker_regime, None)
+            if target_strategy_names is None:
                 ticker_stats[ticker] = {
                     "ticker": ticker,
                     "regime": ticker_regime,
@@ -123,14 +123,21 @@ class ManagerAgent:
                 }
                 continue
 
-            strategy = self.strategy_manager.get_strategy(target_strategy_name)
+            best_signal = None
+            for strategy_name in target_strategy_names:
+                strategy = self.strategy_manager.get_strategy(strategy_name)
 
-            signal = strategy.evaluate(
-                ticker,
-                setup_market_data.get(ticker),
-                market_data,
-                portfolio_info,
-            )
+                signal = strategy.evaluate(
+                    ticker,
+                    setup_market_data.get(ticker),
+                    market_data,
+                    portfolio_info,
+                )
+
+                if best_signal is None or signal.strength > best_signal.strength:
+                    best_signal = signal
+                    target_strategy_name = strategy_name
+            signal = best_signal
 
             # 통계 수집
             ticker_stats[ticker] = {
@@ -228,9 +235,9 @@ class ManagerAgent:
 
         # 1. BTC Regime & 기본 자산 정보
         msg = f"📊 **Hermes Investment Report**\n"
-        msg += f"🌐 BTC Regime: `{btc_regime.upper()}`\n"
-        msg += f"💰 총 자산: `{summary['total_value']:,.0f} KRW`\n"
-        msg += f"💵 현금 자산: `{summary['cash']:,.0f} KRW` ({summary['return_rate']:+.2f}%)\n\n"
+        msg += f"🌐 BTC Regime: {btc_regime.upper()}\n"
+        msg += f"💰 총 자산: {summary['total_value']:,.0f} KRW\n"
+        msg += f"💵 현금 자산: {summary['cash']:,.0f} KRW ({summary['return_rate']:+.2f}%)\n\n"
 
         # 2. 보유 종목 투자금, 수익률, 수익금
         holdings = summary.get("holdings", {})
@@ -245,7 +252,7 @@ class ManagerAgent:
                 pnl = val - cost
                 roi = (pnl / cost * 100) if cost > 0 else 0
 
-                msg += f"• {ticker}: `{cost:,.0f}` → `{roi:+.2f}%` ({pnl:+,.0f})\n"
+                msg += f"• {ticker}: {cost:,.0f} → {roi:+.2f}% ({pnl:+,.0f})\n"
             msg += "\n"
 
         # 3. 전략별 코인 사항 (Regime, Signal)
@@ -264,7 +271,7 @@ class ManagerAgent:
                 s = stat["strategy"]
                 st = stat["signal_type"]
                 sr = stat["signal_reason"]
-                msg += f"• {t} [{r}]: {s} → `{st}`\n  └ {sr}\n"
+                msg += f"• {t} [{r}]: {s} → {st}\n  └ {sr}\n"
             msg += "\n"
 
         # 4. 추가 추천 내용
@@ -287,7 +294,7 @@ class ManagerAgent:
             reverse=True,
         )
         if top_buys:
-            msg += f"🎯 관심 종목: `{top_buys[0]['ticker']}` (강도: {top_buys[0]['signal_strength']:.0%})\n"
+            msg += f"🎯 관심 종목: {top_buys[0]['ticker']} (강도: {top_buys[0]['signal_strength']:.0%})\n"
 
         self.notifier.send_message(msg)
 

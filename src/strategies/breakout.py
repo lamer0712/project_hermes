@@ -27,8 +27,8 @@ class BreakoutStrategy(BaseStrategy):
             "regime": "volatile",
             "setup": {
                 "timeframe": "1h",
-                "bb_width_threshold": 0.05,
-                "adx_threshold": 18,
+                "bb_width_threshold": 0.06,
+                "adx_threshold": 12,
             },
             "entry": {
                 "timeframe": "15m",
@@ -93,7 +93,7 @@ class BreakoutStrategy(BaseStrategy):
         # =========================
         # SETUP (1h)
         # =========================
-
+        setup_ok = False
         if setup_market_data is not None and len(setup_market_data) > 0:
 
             setup = setup_market_data.iloc[-1]
@@ -120,8 +120,11 @@ class BreakoutStrategy(BaseStrategy):
         # ENTRY (15m)
         # =========================
 
-        # 과상승 파동 추격 필터: 15분 내 이미 3% 이상 쏜 캔들의 종가에 따라잡는 행위 금지
-        if price > prev_price * 1.03:
+        # 2봉 연속 급등만 차단
+        if (
+            prev_price > entry_market_data.close.iloc[-3] * 1.02
+            and price > prev_price * 1.02
+        ):
             return Signal(
                 SignalType.HOLD,
                 ticker,
@@ -130,7 +133,6 @@ class BreakoutStrategy(BaseStrategy):
             )
 
         reasons = []
-        strength = 0
 
         entry_cfg = self.params["entry"]
 
@@ -138,17 +140,24 @@ class BreakoutStrategy(BaseStrategy):
 
         breakout = price > bb_upper * (1 + breakout_buffer)
 
-        if breakout:
-            strength += 0.5
-            breakout_target = bb_upper * (1 + breakout_buffer)
-            reasons.append(
-                f"Upper band breakout (P:{price:.2f} > BB:{breakout_target:.2f})"
+        if not breakout:
+            return Signal(
+                SignalType.HOLD,
+                ticker,
+                f"not breakout, price:{price} (>{bb_upper * (1 + breakout_buffer)})",
+                0,
             )
+
+        strength = 0.5
+        breakout_target = bb_upper * (1 + breakout_buffer)
+        reasons.append(
+            f"Upper band breakout (P:{price:.2f} > BB:{breakout_target:.2f})"
+        )
 
         volume_trigger = volume > volume_ma * entry_cfg["volume_multiplier"]
 
         if volume_trigger:
-            strength += 0.4
+            strength += 0.3
             vol_ratio = (volume / volume_ma) * 100 if volume_ma > 0 else 0
             reasons.append(f"Volume spike ({vol_ratio:.1f}%)")
 

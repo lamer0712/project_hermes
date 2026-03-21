@@ -317,6 +317,17 @@ class UpbitBroker:
                 logger.info(f"상세 메시지: {response.text}")
             return []
 
+    def get_orderbook(self, ticker: str) -> list:
+        """특정 마켓의 오더북(호가창)을 조회합니다."""
+        url = f"{self.BASE_URL}/orderbook"
+        params = {"markets": ticker}
+        try:
+            response = requests.get(url, headers={"Accept": "application/json"}, params=params)
+            response.raise_for_status()
+            return response.json()
+        except requests.exceptions.RequestException as e:
+            logger.error(f"[Broker API Error] 오더북 조회 실패 ({ticker}): {e}")
+            return []
 
 if __name__ == "__main__":
     broker = UpbitBroker()
