@@ -297,9 +297,12 @@ class ManagerAgent:
 
         risk_signal = self.risk_manager.evaluate_risk(self.name, ticker, current_price)
         if risk_signal:
-            logger.warning(
-                f"⚡ [Realtime Risk Hook] 즉각적인 리스크 조건 충족: {ticker} @ {current_price}"
+            risk_signal_str = risk_signal.__str__()
+            log = (
+                f"⚡ [Realtime Risk Hook] {ticker} @ {current_price}\n{risk_signal_str}"
             )
+            logger.warning(log)
+            self.notifier.send_message(log)
             self._execute_sell("RiskManager", ticker, current_price, risk_signal)
 
     def _execute_buy(
