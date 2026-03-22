@@ -30,6 +30,32 @@ class VWAPReversionStrategy(BaseStrategy):
             "position_size_ratio": 1.0,  # 과대낙폭(안전한 자리)이므로 최대 투입 승수
         }
 
+    @staticmethod
+    def is_fake_dip(df):
+        ema20 = df["ema20"].iloc[-1]
+        ema50 = df["ema50"].iloc[-1]
+        vol = df["volume"].iloc[-1]
+        vol_ma = df["volume"].rolling(20).mean().iloc[-1]
+
+        # 1. 하락 추세
+        if ema20 < ema50:
+            return True
+
+        # 2. RSI 하락 지속 (최근 3개)
+        if len(df) >= 3:
+            if df["rsi"].iloc[-1] < df["rsi"].iloc[-2] < df["rsi"].iloc[-3]:
+                return True
+
+        # 3. 거래량 부족
+        if vol < vol_ma * 0.8:
+            return True
+
+        # 4. 음봉
+        if df["close"].iloc[-1] < df["open"].iloc[-1]:
+            return True
+
+        return False
+
     def evaluate(
         self,
         ticker: str,
@@ -98,6 +124,8 @@ class VWAPReversionStrategy(BaseStrategy):
             distance_to_vwap <= self.params["entry"]["vwap_distance_pct"]
             and score >= 0.4
         ):
+            if self.is_fake_dip(df):
+                return Signal(SignalType.HOLD, ticker, "가짜 눌림목", 0)
             # 진입 2. RSI 과매도 구간
             if (
                 rsi < self.params["entry"]["rsi_threshold"]
