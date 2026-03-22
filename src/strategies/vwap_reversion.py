@@ -27,7 +27,7 @@ class VWAPReversionStrategy(BaseStrategy):
                 "rsi_threshold": 65,  # RSI 65 도달 시 청산 (반등 완료)
                 "vwap_buffer": 0.002,  # VWAP 도달 부근에서 청산 (0.2%)
             },
-            "position_size_ratio": 0.777,  # 과대낙폭(안전한 자리)이므로 최대 투입 승수
+            "position_size_ratio": 1.0,  # 과대낙폭(안전한 자리)이므로 최대 투입 승수
         }
 
     def evaluate(
