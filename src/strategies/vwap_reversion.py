@@ -36,6 +36,7 @@ class VWAPReversionStrategy(BaseStrategy):
         ema50 = df["ema_50"].iloc[-1]
         vol = df["volume"].iloc[-1]
         vol_ma = df["volume_ma20"].iloc[-1]
+        rsi_14 = df["rsi_14"]
 
         # 1. 하락 추세
         if ema20 < ema50:
@@ -43,7 +44,7 @@ class VWAPReversionStrategy(BaseStrategy):
 
         # 2. RSI 하락 지속 (최근 3개)
         if len(df) >= 3:
-            if df["rsi"].iloc[-1] < df["rsi"].iloc[-2] < df["rsi"].iloc[-3]:
+            if rsi_14.iloc[-1] < rsi_14.iloc[-2] < rsi_14.iloc[-3]:
                 return True, "RSI 하락 지속"
 
         # 3. 거래량 부족
