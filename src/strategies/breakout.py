@@ -119,18 +119,7 @@ class BreakoutStrategy(BaseStrategy):
         # =========================
         # ENTRY (15m)
         # =========================
-
-        # 2봉 연속 급등만 차단
-        if (
-            prev_price > entry_market_data.close.iloc[-3] * 1.02
-            and price > prev_price * 1.02
-        ):
-            return Signal(
-                SignalType.HOLD,
-                ticker,
-                f"과매수 필터 차단 (급등 {((price-prev_price)/prev_price)*100:.1f}%)",
-                0,
-            )
+        recent_high = entry_market_data.high.rolling(20).max().iloc[-2]
 
         if self.is_downtrend(entry_market_data):
             return Signal(SignalType.HOLD, ticker, "하락 추세", 0)
@@ -139,39 +128,42 @@ class BreakoutStrategy(BaseStrategy):
 
         entry_cfg = self.params["entry"]
 
-        breakout_buffer = entry_cfg["breakout_buffer"]
-
-        breakout = price > bb_upper * (1 + breakout_buffer)
+        breakout = price > recent_high
 
         if not breakout:
             return Signal(
                 SignalType.HOLD,
                 ticker,
-                f"not breakout, price:{price} (>{bb_upper * (1 + breakout_buffer)})",
+                f"not breakout, price:{price} (>{recent_high})",
                 0,
             )
 
-        strength = 0.5
-        breakout_target = bb_upper * (1 + breakout_buffer)
-        reasons.append(
-            f"Upper band breakout (P:{price:.2f} > BB:{breakout_target:.2f})"
-        )
+        strength = 0.7
+        reasons.append(f"High breakout (P:{price:.2f} > High:{recent_high:.2f})")
 
         volume_trigger = volume > volume_ma * entry_cfg["volume_multiplier"]
 
         if volume_trigger:
-            strength += 0.3
+            strength += 0.2
             vol_ratio = (volume / volume_ma) * 100 if volume_ma > 0 else 0
             reasons.append(f"Volume spike ({vol_ratio:.1f}%)")
 
         price_acceleration = price > prev_price * 1.003
 
         if price_acceleration:
-            strength += 0.2
+            strength += 0.1
             accel_pct = (
                 ((price - prev_price) / prev_price) * 100 if prev_price > 0 else 0
             )
             reasons.append(f"Momentum acceleration ({accel_pct:.2f}%)")
+
+        # 4. 과열 패널티
+        if (
+            prev_price > entry_market_data.close.iloc[-3] * 1.02
+            and price > prev_price * 1.02
+        ):
+            strength *= 0.5
+            reasons.append("Overheating penalty (x0.5)")
 
         if strength >= 0.6:
 
