@@ -220,6 +220,7 @@ class UpbitMarketData:
         close = df["close"]
         high = df["high"]
         low = df["low"]
+        volume = df["volume"]
 
         # high / low
         df["high_20"] = high.rolling(20).max()
@@ -230,7 +231,7 @@ class UpbitMarketData:
         df["ma_20"] = close.rolling(20).mean()
         df["ma_50"] = close.rolling(50).mean()
         df["ma_60"] = close.rolling(60).mean()
-        df["volume_ma20"] = df["volume"].rolling(20).mean()
+        df["volume_ma20"] = volume.rolling(20).mean()
 
         ## RSI
         df["rsi_14"] = talib.RSI(close, timeperiod=14)
