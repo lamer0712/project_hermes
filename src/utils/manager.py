@@ -49,6 +49,7 @@ class ManagerAgent:
         전체 종목을 평가하여 매도는 모두 실행하되,
         매수는 가장 강한 시그널의 1종목만 실행합니다.
         """
+        self.notifier.send_message(f"========== Trading Start ==========")
         if not setup_market_data or not entry_market_data:
             return
 
@@ -156,7 +157,9 @@ class ManagerAgent:
             if signal and signal.type == SignalType.SELL:
                 if is_held:
                     sig_str = signal.__str__()
-                    self.notifier.send_message(f"SELL | {strategy.name} → {sig_str}")
+                    self.notifier.send_message(
+                        f" - Stretegy : {strategy.name}\n\t{sig_str}"
+                    )
                     self._execute_sell(ticker, current_price, signal)
 
             # BUY 시그널은 후보로 수집 (가장 강한 것만 나중에 실행)
@@ -186,7 +189,7 @@ class ManagerAgent:
             )
 
             sig_str = signal_best.__str__()
-            log = f"🟢 Stretegy : {best_buy_strategy.name}\n{sig_str}"
+            log = f" - Stretegy : {best_buy_strategy.name}\n\t{sig_str}"
             logger.info(log)
             self.notifier.send_message(log)
             self._execute_buy(ticker, current_price, signal_best, atr=atr)
@@ -365,7 +368,7 @@ class ManagerAgent:
 
         if order_amount < self.MIN_ORDER_AMOUNT:
             logger.warning(
-                f"⚠️ 주문 금액({order_amount:,.0f} KRW)이 최소 기준({self.MIN_ORDER_AMOUNT:,} KRW) 미달 → 매수 취소"
+                f"주문 금액({order_amount:,.0f} KRW)이 최소 기준({self.MIN_ORDER_AMOUNT:,} KRW) 미달 → 매수 취소"
             )
             return
 
@@ -465,7 +468,7 @@ class ManagerAgent:
             remaining_value = remaining_volume * current_price
             if remaining_value < self.MIN_ORDER_AMOUNT and remaining_volume > 0:
                 logger.warning(
-                    f"⚠️ 잔여 평가액({remaining_value:,.0f} KRW)이 최소 주문 기준 미달 → 전량 매도로 전환"
+                    f"잔여 평가액({remaining_value:,.0f} KRW)이 최소 주문 기준 미달 → 전량 매도로 전환"
                 )
                 sell_volume = held_volume
         else:
@@ -486,14 +489,14 @@ class ManagerAgent:
             remaining_value = remaining_volume * current_price
             if remaining_value < self.MIN_ORDER_AMOUNT and remaining_volume > 0:
                 logger.warning(
-                    f"⚠️ 잔여 평가액({remaining_value:,.0f} KRW)이 최소 주문 기준 미달 → 전량 매도로 전환"
+                    f"잔여 평가액({remaining_value:,.0f} KRW)이 최소 주문 기준 미달 → 전량 매도로 전환"
                 )
                 sell_volume = held_volume
 
         estimated_value = sell_volume * current_price
 
         if estimated_value < self.MIN_ORDER_AMOUNT:
-            logger.warning(f"⚠️ 매도 예상 평가액({estimated_value:,.0f} KRW) 미달.")
+            logger.warning(f"매도 예상 평가액({estimated_value:,.0f} KRW) 미달.")
 
             # PM에 팬텀 보유량이 있을 수 있으므로 실제 잔고 확인 후 정리
             if self.portfolio_manager:
@@ -529,10 +532,10 @@ class ManagerAgent:
                     actual_balance = float(b.get("balance", "0"))
                     break
         except Exception as e:
-            logger.error(f"⚠️ 실제 잔고 조회 실패: {e}")
+            logger.error(f"실제 잔고 조회 실패: {e}")
 
         if actual_balance <= 0:
-            logger.warning(f"⚠️ {ticker} 실제 Upbit 잔고 없음 → 매도 취소")
+            logger.warning(f"{ticker} 실제 Upbit 잔고 없음 → 매도 취소")
             # PM 보유량도 정리
             if self.portfolio_manager:
                 holdings = self.portfolio_manager.get_holdings(self.name)
@@ -548,7 +551,7 @@ class ManagerAgent:
         pm_tracked_volume = sell_volume
         if sell_volume > actual_balance:
             logger.warning(
-                f"⚠️ 매도 수량({sell_volume:.6f}) > 실제 잔고({actual_balance:.6f}) → 실제 잔고로 보정"
+                f"매도 수량({sell_volume:.6f}) > 실제 잔고({actual_balance:.6f}) → 실제 잔고로 보정"
             )
             sell_volume = actual_balance
 

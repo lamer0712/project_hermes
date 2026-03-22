@@ -4,6 +4,7 @@ import os
 from logging.handlers import RotatingFileHandler
 from src.utils.telegram_notifier import TelegramNotifier
 
+
 class TelegramLoggingHandler(logging.Handler):
     def __init__(self, notifier: TelegramNotifier):
         super().__init__()
@@ -22,18 +23,19 @@ class TelegramLoggingHandler(logging.Handler):
         except Exception:
             self.handleError(record)
 
+
 def setup_logger(name: str = "InvestmentFirmAlpha") -> logging.Logger:
     logger = logging.getLogger(name)
-    
+
     # Avoid adding multiple handlers if logger is already configured
     if logger.handlers:
         return logger
-        
+
     logger.setLevel(logging.INFO)
 
     formatter = logging.Formatter(
-        '[%(asctime)s] [%(levelname)s] [%(filename)s:%(lineno)d] %(message)s',
-        datefmt='%Y-%m-%d %H:%M:%S'
+        "[%(asctime)s] [%(levelname)s] [%(filename)s:%(lineno)d] %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
     )
 
     # 1. Console Handler
@@ -44,7 +46,7 @@ def setup_logger(name: str = "InvestmentFirmAlpha") -> logging.Logger:
     # 2. File Handler (Rotating)
     log_file = "backend.log"
     file_handler = RotatingFileHandler(
-        log_file, maxBytes=10*1024*1024, backupCount=5, encoding='utf-8'
+        log_file, maxBytes=10 * 1024 * 1024, backupCount=5, encoding="utf-8"
     )
     file_handler.setFormatter(formatter)
     logger.addHandler(file_handler)
@@ -55,11 +57,12 @@ def setup_logger(name: str = "InvestmentFirmAlpha") -> logging.Logger:
         telegram_handler = TelegramLoggingHandler(notifier)
         telegram_handler.setLevel(logging.WARNING)
         # We use a simpler formatter for Telegram to avoid clutter
-        telegram_formatter = logging.Formatter('%(message)s')
+        telegram_formatter = logging.Formatter("%(message)s")
         telegram_handler.setFormatter(telegram_formatter)
         logger.addHandler(telegram_handler)
 
     return logger
+
 
 # Global logger instance
 logger = setup_logger()

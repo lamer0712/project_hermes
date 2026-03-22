@@ -47,8 +47,14 @@ class PortfolioManager:
                         self.portfolios[agent_name]["initial_capital"] = pb[
                             "allocated_capital"
                         ]
-                        self.portfolios[agent_name]["total_trades"] = pb.get("total_trades", self.portfolios[agent_name].get("total_trades", 0))
-                        self.portfolios[agent_name]["winning_trades"] = pb.get("winning_trades", self.portfolios[agent_name].get("winning_trades", 0))
+                        self.portfolios[agent_name]["total_trades"] = pb.get(
+                            "total_trades",
+                            self.portfolios[agent_name].get("total_trades", 0),
+                        )
+                        self.portfolios[agent_name]["winning_trades"] = pb.get(
+                            "winning_trades",
+                            self.portfolios[agent_name].get("winning_trades", 0),
+                        )
                         self.portfolios[agent_name]["is_halted"] = pb["is_halted"]
 
                     # Convert DB holdings (volume, avg_price, max_price, sl_levels_hit)
@@ -244,6 +250,7 @@ class PortfolioManager:
 
         avg_price = holdings[ticker]["avg_price"]
         profit = sell_revenue_net - (avg_price * volume)
+        profit_ratio = (profit / (avg_price * volume)) * 100
 
         portfolio["cash"] += sell_revenue_net
         holdings[ticker]["volume"] -= volume
@@ -265,7 +272,7 @@ class PortfolioManager:
         )
         self.export_portfolio_report(agent_name)
         profit_emoji = "⏫" if profit > 0 else "⏬"
-        msg = f"[Manager] {profit_emoji} {agent_name} 매도 기록: {ticker}, 거래수량: {volume:.6f}, 단가: {price:,.0f}, 거래금액: {sell_revenue_gross:,.0f}, 수수료: {paid_fee:,.2f}, 정산금액: {sell_revenue_net:,.0f}, 손익: {profit:+,.0f}, 잔여현금: {portfolio['cash']:,.0f})"
+        msg = f"{profit_emoji}{ticker} - 거래수량: {volume:.3f}, 단가: {price:,.0f}, 거래금액: {sell_revenue_gross:,.0f}, 수수료: {paid_fee:,.2f}, 정산금액: {sell_revenue_net:,.0f}, 손익: {profit:+,.0f}({profit_ratio:+.2f}%)"
         logger.info(msg)
         self.notifier.send_message(msg)
         return True
@@ -292,8 +299,12 @@ class PortfolioManager:
         """모든 에이전트의 거래 내역(trade_history)을 DB에서 삭제합니다."""
         try:
             self.db.clear_trade_history()
-            logger.info("[PortfolioManager] DB의 trade_history 전체 기록을 초기화했습니다.")
-            self.notifier.send_message("🧹 *포트폴리오 과거 거래 내역(trade_history)이 초기화되었습니다.*")
+            logger.info(
+                "[PortfolioManager] DB의 trade_history 전체 기록을 초기화했습니다."
+            )
+            self.notifier.send_message(
+                "🧹 *포트폴리오 과거 거래 내역(trade_history)이 초기화되었습니다.*"
+            )
             return True
         except Exception as e:
             logger.error(f"[PortfolioManager] trade_history 삭제 실패: {e}")
@@ -303,8 +314,12 @@ class PortfolioManager:
         """지정된 기간이 지난 trade_history를 자동 삭제합니다."""
         try:
             self.db.delete_old_trade_history(days)
-            logger.info(f"[PortfolioManager] {days}일 지난 과거 거래 내역을 정리했습니다.")
-            self.notifier.send_message(f"🧹 *[Daily Sync] {days}일 이상 경과된 과거 거래 내역이 자동 삭제되었습니다.*")
+            logger.info(
+                f"[PortfolioManager] {days}일 지난 과거 거래 내역을 정리했습니다."
+            )
+            self.notifier.send_message(
+                f"🧹 *[Daily Sync] {days}일 이상 경과된 과거 거래 내역이 자동 삭제되었습니다.*"
+            )
             return True
         except Exception as e:
             logger.error(f"[PortfolioManager] 자동 삭제 실패: {e}")
@@ -436,11 +451,21 @@ class PortfolioManager:
 """
         holdings = summary.get("holdings", {})
         if holdings:
-            md += "| 종목 | 수량 | 평균 매입가 | **현재가** | 매입 총액 | **수익률** |\n"
+            md += (
+                "| 종목 | 수량 | 평균 매입가 | **현재가** | 매입 총액 | **수익률** |\n"
+            )
             md += "|------|------|-----------|-----------|----------|---------|\n"
             for ticker, h in holdings.items():
-                current_p = current_prices.get(ticker, h["avg_price"]) if current_prices else h["avg_price"]
-                roi = ((current_p - h["avg_price"]) / h["avg_price"] * 100) if h["avg_price"] > 0 else 0
+                current_p = (
+                    current_prices.get(ticker, h["avg_price"])
+                    if current_prices
+                    else h["avg_price"]
+                )
+                roi = (
+                    ((current_p - h["avg_price"]) / h["avg_price"] * 100)
+                    if h["avg_price"] > 0
+                    else 0
+                )
                 md += f"| {ticker} | {h['volume']:.6f} | {h['avg_price']:,.2f} | **{current_p:,.2f}** | {h['total_cost']:,.0f} | **{roi:+.2f}%** |\n"
         else:
             md += "_보유 종목 없음_\n"
@@ -526,14 +551,18 @@ class PortfolioManager:
             for ticker, data in coin_holdings.items():
                 if ticker in old_holdings:
                     # 기존 메타데이터 유지
-                    data["max_price"] = old_holdings[ticker].get("max_price", data["avg_price"])
-                    data["sl_levels_hit"] = old_holdings[ticker].get("sl_levels_hit", [])
+                    data["max_price"] = old_holdings[ticker].get(
+                        "max_price", data["avg_price"]
+                    )
+                    data["sl_levels_hit"] = old_holdings[ticker].get(
+                        "sl_levels_hit", []
+                    )
                     data["atr_14"] = old_holdings[ticker].get("atr_14", 0)
                 else:
                     data["max_price"] = data["avg_price"]
                     data["sl_levels_hit"] = []
                     data["atr_14"] = 0
-                
+
                 self.portfolios[agent_name]["holdings"][ticker] = data
                 allocated_costs += data["total_cost"]
 

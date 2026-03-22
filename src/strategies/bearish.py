@@ -15,10 +15,12 @@ class BearishStrategy(BaseStrategy):
             "entry": {
                 "rsi_rebound": 45,
                 "volume_multiplier": 1.2,
+                "trend_filter": 0.98,
             },
             "exit": {
                 "rsi_over": 55,
                 "stop_loss": 0.97,
+                "quick_tp": 1.02,
             },
             "position_size_ratio": 0.2,
         }
@@ -37,6 +39,10 @@ class BearishStrategy(BaseStrategy):
         rsi = float(entry_market_data.rsi_14.iloc[-1])
         prev_rsi = float(entry_market_data.rsi_14.iloc[-2])
         ma9 = float(entry_market_data.ma_9.iloc[-1])
+        ma20 = float(entry_market_data.ma_20.iloc[-1])
+
+        vol = float(entry_market_data.volume.iloc[-1])
+        vol_ma = float(entry_market_data.volume_ma_20.iloc[-1])
 
         entry_price = holdings.get(ticker, {}).get("avg_price", 0)
 
@@ -45,15 +51,19 @@ class BearishStrategy(BaseStrategy):
         # =========================
         if is_held:
             if price <= entry_price * self.params["exit"]["stop_loss"]:
-                return Signal(SignalType.SELL, ticker, "Bearish stop loss", 1.0)
+                return Signal(SignalType.SELL, ticker, "Stop loss", 1.0)
+
+            # 짧게 먹기
+            if price >= entry_price * self.params["exit"]["quick_tp"]:
+                return Signal(SignalType.SELL, ticker, "Quick TP", 0.7)
 
             if rsi > self.params["exit"]["rsi_over"]:
-                return Signal(SignalType.SELL, ticker, "Dead cat bounce exit", 0.8)
+                return Signal(SignalType.SELL, ticker, "RSI exit", 0.7)
 
             if price < ma9:
-                return Signal(SignalType.SELL, ticker, "Trend rejection", 0.7)
+                return Signal(SignalType.SELL, ticker, "MA9 break", 0.8)
 
-            return Signal(SignalType.HOLD, ticker, "Weak hold", 0)
+            return Signal(SignalType.HOLD, ticker, "", 0)
 
         # =========================
         # ENTRY → 제한적 반등만
@@ -63,11 +73,16 @@ class BearishStrategy(BaseStrategy):
             and prev_rsi <= self.params["entry"]["rsi_rebound"]
         )
 
-        if rebound:
+        volume_ok = vol > vol_ma * self.params["entry"]["volume_multiplier"]
+
+        # 핵심: 완전 하락추세는 피함
+        trend_filter = price > ma20 * self.params["entry"]["trend_filter"]
+
+        if rebound and volume_ok and trend_filter:
             return Signal(
                 SignalType.BUY,
                 ticker,
-                "Small rebound scalp",
+                "Filtered rebound",
                 self.params["position_size_ratio"],
             )
 
