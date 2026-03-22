@@ -52,7 +52,7 @@ async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
     CommandQueue.push("status", {})
     await context.bot.send_message(
         chat_id=chat_id,
-        text="✅ **status** 명령 접수\n⏳ 다음 스케줄러 주기에 실행됩니다 (최대 30초 내)",
+        text="✅ **status** 명령 접수\n⏳ 다음 스케줄러 주기에 실행됩니다 (최대 2초 내)",
     )
 
 
@@ -119,7 +119,7 @@ async def cmd_liquidate(update: Update, context: ContextTypes.DEFAULT_TYPE):
     CommandQueue.push("liquidate", {"ticker": ticker})
     await context.bot.send_message(
         chat_id=chat_id,
-        text=f"✅ **liquidate** 명령 접수 ({ticker})\n⏳ 다음 스케줄러 주기에 실행됩니다 (최대 30초 내)",
+        text=f"✅ **liquidate** 명령 접수 ({ticker})\n⏳ 다음 스케줄러 주기에 실행됩니다 (최대 2초 내)",
     )
 
 
@@ -140,7 +140,7 @@ async def cmd_eval(update: Update, context: ContextTypes.DEFAULT_TYPE):
     CommandQueue.push("eval", {"ticker": ticker})
     await context.bot.send_message(
         chat_id=chat_id,
-        text=f"✅ **eval** 명령 접수 ({ticker})\n⏳ 다음 스케줄러 주기에 실행됩니다 (최대 30초 내)",
+        text=f"✅ **eval** 명령 접수 ({ticker})\n⏳ 다음 스케줄러 주기에 실행됩니다 (최대 2초 내)",
     )
 
 

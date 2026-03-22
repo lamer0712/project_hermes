@@ -182,13 +182,13 @@ def main():
         execute_daily_sync, pm=pm, manager=manager, notifier=notifier
     )
 
-    # 텔레그램 명령 큐 처리 (30초마다)
+    # 텔레그램 명령 큐 처리 (2초마다)
     command_handler = CommandQueueHandler(pm, manager, notifier)
-    schedule.every(30).seconds.do(command_handler.process)
+    schedule.every(2).seconds.do(command_handler.process)
 
     logger.info("\n" + "=" * 60)
     logger.info("⏰ Scheduler started. Press Ctrl+C to exit.")
-    logger.info("📱 텔레그램 명령 큐 모니터링 활성화 (30초 주기)")
+    logger.info("📱 텔레그램 명령 큐 모니터링 활성화 (2초 주기)")
     logger.info("=" * 60)
 
     # 1. 텔레그램 리스너 백그라운드 스레드 시작
