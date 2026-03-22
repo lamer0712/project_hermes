@@ -166,9 +166,10 @@ class CommandQueueHandler:
         s = stat["strategy"]
         st = stat["signal_type"]
         sr = stat["signal_reason"]
+        ss = stat["signal_strength"]
 
         msg = f"⚙️ **전략별 모니터링 (개별)**\n"
-        msg += f"• {t} [{r}]: {s} → {st} \n  └ {sr}\n"
+        msg += f"• {t} [{r}]: {s} → {st}_{ss:.0%}\n  └ {sr}\n"
 
         self.notifier.send_message(msg)
 

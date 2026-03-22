@@ -265,7 +265,7 @@ class ManagerAgent:
                 st = stat["signal_type"]
                 sr = stat["signal_reason"]
                 ss = stat["signal_strength"]
-                msg += f"• {t} [{r}]: {s} → {st}{ss:.0%}\n  └ {sr}\n"
+                msg += f"• {t} [{r}]: {s} → {st}_{ss:.0%}\n  └ {sr}\n"
             msg += "\n"
 
         # 4. 추가 추천 내용
