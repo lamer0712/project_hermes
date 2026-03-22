@@ -249,12 +249,12 @@ class UpbitMarketData:
         df["plus_di_14"] = talib.PLUS_DI(high, low, close, timeperiod=14)
         df["minus_di_14"] = talib.MINUS_DI(high, low, close, timeperiod=14)
 
-        ## VWAP (Volume Weighted Average Price - Daily Cumulative)
-        df["typical_price"] = (high + low + close) / 3.0
-        df["date"] = df["time"].dt.date
-        df["vwap"] = (df["volume"] * df["typical_price"]).groupby(
-            df["date"]
-        ).cumsum() / df["volume"].groupby(df["date"]).cumsum()
+        ## VWAP (Volume Weighted Average Price)
+
+        tp = (high + low + close) / 3
+        pv = volume * tp
+        window = 96  # 15m 기준 1일
+        df["vwap"] = pv.rolling(window).sum() / volume.rolling(window).sum()
 
         ## EMA
         df["ema_20"] = talib.EMA(close, timeperiod=20)
