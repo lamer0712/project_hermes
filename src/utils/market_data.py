@@ -258,6 +258,7 @@ class UpbitMarketData:
 
         ## EMA
         df["ema_20"] = talib.EMA(close, timeperiod=20)
+        df["ema_50"] = talib.EMA(close, timeperiod=50)
 
         ## Change 5
         df["change_5"] = df["close"].pct_change(5) * 100
