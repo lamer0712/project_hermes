@@ -99,22 +99,22 @@ class VWAPReversionStrategy(BaseStrategy):
         # 진입 1. 가격이 VWAP 대비 충분히 폭락(-1.5% 이상)
         if (
             distance_to_vwap <= self.params["entry"]["vwap_distance_pct"]
-            and score >= 0.4
+            and score >= 0.5
         ):
             is_fake_dip, reason = self.is_fake_dip(df)
             if is_fake_dip:
                 return Signal(SignalType.HOLD, ticker, f"가짜 눌림목 ({reason})", 0)
             # 진입 2. RSI 과매도 구간
             if (
-                rsi < self.params["entry"]["rsi_threshold"]
-                or current_price < bb_lower * 1.02
+                rsi < self.params["entry"]["rsi_threshold"]  # 38
+                and current_price < bb_lower * 1.02
             ):
                 strength = score * self.params["position_size_ratio"]
 
                 return Signal(
                     SignalType.BUY,
                     ticker,
-                    f"VWAP Dip (Dist: {distance_to_vwap*100:.1f}%, RSI: {rsi:.1f}), CP: {current_price}, BB_Low: {bb_lower})",
+                    f"VWAP Dip s:{score:.2f} (Dist: {distance_to_vwap*100:.1f}%, RSI: {rsi:.1f}), CP: {current_price}, BB_Low: {bb_lower})",
                     strength,
                 )
 
