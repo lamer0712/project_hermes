@@ -141,4 +141,9 @@ class VWAPReversionStrategy(BaseStrategy):
                     strength,
                 )
 
-        return Signal(SignalType.HOLD, ticker, "대기", 0)
+        return Signal(
+            SignalType.HOLD,
+            ticker,
+            f"대기 (Dist: {distance_to_vwap*100:.1f}%, score: {score:.2f})",
+            0,
+        )
