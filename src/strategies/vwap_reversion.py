@@ -20,7 +20,7 @@ class VWAPReversionStrategy(BaseStrategy):
     def get_default_params(self) -> dict:
         return {
             "entry": {
-                "vwap_distance_pct": -0.008,  # VWAP 대비 최소 0.8% 이탈
+                "vwap_distance_pct": -0.01,  # VWAP 대비 최소 1% 이탈
                 "rsi_threshold": 38,  # RSI 38 이하 (과매도)
             },
             "exit": {
@@ -78,20 +78,32 @@ class VWAPReversionStrategy(BaseStrategy):
         # ENTRY (15m)
         # =========================
         distance_to_vwap = (current_price - vwap) / vwap
+        distance = abs(distance_to_vwap)
+
+        # 1. VWAP score (0~1)
+        vwap_score = min(distance / 0.03, 1.0)  # -3% 기준 cap
+
+        # 2. RSI score (0~1)
+        rsi_score = max(0, (50 - rsi) / 20)  # RSI 30이면 1
+
+        # 3. BB score (0~1)
+        bb_dist = (current_price - bb_lower) / bb_lower
+        bb_score = max(0, 1 - (bb_dist / 0.03))  # BB에서 가까울수록 1
+
+        # 최종 score (가중합)
+        score = 0.5 * vwap_score + 0.3 * rsi_score + 0.2 * bb_score
 
         # 진입 1. 가격이 VWAP 대비 충분히 폭락(-1.5% 이상)
-        if distance_to_vwap <= self.params["entry"]["vwap_distance_pct"]:
+        if (
+            distance_to_vwap <= self.params["entry"]["vwap_distance_pct"]
+            and score >= 0.4
+        ):
             # 진입 2. RSI 과매도 구간
             if (
                 rsi < self.params["entry"]["rsi_threshold"]
                 or current_price < bb_lower * 1.02
             ):
-                strength = self.params["position_size_ratio"]
-
-                # logger.info(
-                #     f"🎯 [VWAP Reversion] {ticker} 진입 포착! "
-                #     f"(VWAP 이격: {distance_to_vwap*100:.1f}%, RSI: {rsi:.1f}, CP: {current_price}, BB_Low: {bb_lower})"
-                # )
+                strength = score * self.params["position_size_ratio"]
 
                 return Signal(
                     SignalType.BUY,
