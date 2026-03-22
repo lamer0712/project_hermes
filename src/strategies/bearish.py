@@ -42,7 +42,7 @@ class BearishStrategy(BaseStrategy):
         ma20 = float(entry_market_data.ma_20.iloc[-1])
 
         vol = float(entry_market_data.volume.iloc[-1])
-        vol_ma = float(entry_market_data.volume_ma_20.iloc[-1])
+        vol_ma = float(entry_market_data.volume_ma20.iloc[-1])
 
         entry_price = holdings.get(ticker, {}).get("avg_price", 0)
 
