@@ -32,7 +32,7 @@ class BreakoutStrategy(BaseStrategy):
             },
             "entry": {
                 "timeframe": "15m",
-                "volume_multiplier": 1.4,
+                "volume_multiplier": 1.3,
                 "breakout_buffer": 0.002,
             },
             "exit": {
@@ -91,81 +91,50 @@ class BreakoutStrategy(BaseStrategy):
             )
 
         # =========================
-        # SETUP (1h)
-        # =========================
-        setup_ok = False
-        if setup_market_data is not None and len(setup_market_data) > 0:
-
-            setup = setup_market_data.iloc[-1]
-
-            bb_width = float(setup.get("bb_width", 0))
-            adx = float(setup.get("adx_14", 0))
-
-            setup_cfg = self.params["setup"]
-
-            setup_ok = (
-                bb_width < setup_cfg["bb_width_threshold"]
-                and adx > setup_cfg["adx_threshold"]
-            )
-
-            if not setup_ok:
-                return Signal(
-                    SignalType.HOLD,
-                    ticker,
-                    "Setup 미충족",
-                    0,
-                )
-
-        # =========================
         # ENTRY (15m)
         # =========================
-        high_20 = entry_market_data.high.rolling(20).max()
-        recent_high = high_20.iloc[-2]
-        prev_high = high_20.iloc[-3]
-
-        if self.is_downtrend(entry_market_data):
-            return Signal(SignalType.HOLD, ticker, "하락 추세", 0)
+        recent_high = entry_market_data.high.rolling(10).max().iloc[-2]
+        prev_prev_close = entry_market_data.close.iloc[-3]
 
         reasons = []
 
         entry_cfg = self.params["entry"]
 
-        breakout = prev_price <= prev_high and price > recent_high
+        strength = 0.5
 
-        if not breakout:
-            return Signal(
-                SignalType.HOLD,
-                ticker,
-                f"not breakout, price:{price} (>{recent_high})",
-                0,
-            )
+        # breakout
+        if price > recent_high * 0.998:
+            strength += 0.3
+            reasons.append("breakout")
 
-        strength = 0.7
-        reasons.append(f"High breakout (P:{price:.2f} > High:{recent_high:.2f})")
-
-        volume_trigger = volume > volume_ma * entry_cfg["volume_multiplier"]
-
-        if volume_trigger:
+        # volume trigger
+        if volume > volume_ma * entry_cfg["volume_multiplier"]:
             strength += 0.2
             vol_ratio = (volume / volume_ma) * 100 if volume_ma > 0 else 0
-            reasons.append(f"Volume spike ({vol_ratio:.1f}%)")
+            reasons.append(f"Volume")
 
-        price_acceleration = price > prev_price * 1.003
-
-        if price_acceleration:
-            strength += 0.1
+        # price acceleration
+        if price > prev_price * 1.002:
+            strength += 0.2
             accel_pct = (
                 ((price - prev_price) / prev_price) * 100 if prev_price > 0 else 0
             )
-            reasons.append(f"Momentum acceleration ({accel_pct:.2f}%)")
+            reasons.append(f"Momentum")
 
-        # 4. 과열 패널티
-        if (
-            prev_price > entry_market_data.close.iloc[-3] * 1.02
-            and price > prev_price * 1.02
-        ):
-            strength -= 0.2
-            reasons.append("Overheating penalty (-0.2)")
+        # pullback breakout
+        if price > recent_high * 0.995 and prev_prev_close > prev_price < price:
+            strength += 0.2
+            reasons.append("pullback")
+
+        # Overheating penalty
+        if prev_price > prev_prev_close * 1.02 and price > prev_price * 1.02:
+            strength *= 0.8
+            reasons.append("(-)Overheating")
+
+        # downtrend penalty
+        if self.is_downtrend(entry_market_data):
+            strength *= 0.7
+            reasons.append("(-)Downtrend")
 
         if strength >= 0.6:
 
