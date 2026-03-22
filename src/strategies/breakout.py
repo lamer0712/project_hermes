@@ -100,12 +100,11 @@ class BreakoutStrategy(BaseStrategy):
 
         entry_cfg = self.params["entry"]
 
-        strength = 0.5
+        # not breakout
+        if price <= recent_high * 0.998:
+            return Signal(SignalType.HOLD, ticker, "not breakout", 0)
 
-        # breakout
-        if price > recent_high * 0.998:
-            strength += 0.3
-            reasons.append("breakout")
+        strength = 0.5
 
         # volume trigger
         if volume > volume_ma * entry_cfg["volume_multiplier"]:
