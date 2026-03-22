@@ -36,6 +36,40 @@ class BaseStrategy(ABC):
         self.params = params or {}
         self.regime = params.get("regime", None)
 
+    @staticmethod
+    def is_fake_dip(df):
+        ema20 = df["ema_20"].iloc[-1]
+        ema50 = df["ema_50"].iloc[-1]
+        vol = df["volume"].iloc[-1]
+        vol_ma = df["volume_ma20"].iloc[-1]
+        rsi_14 = df["rsi_14"]
+
+        close = df["close"].iloc[-1]
+        bb_lower = df["bb_lower"].iloc[-1]
+
+        # 1. 하락 추세
+        if ema20 < ema50:
+            return True, "하락 추세"
+
+        # 2. RSI 하락 지속 (최근 3개)
+        if len(df) >= 3:
+            if rsi_14.iloc[-1] < rsi_14.iloc[-2] < rsi_14.iloc[-3]:
+                return True, "RSI 하락 지속"
+
+        # 3. 거래량 부족
+        if vol < vol_ma * 0.8:
+            return True, "거래량 부족"
+
+        # 4. 아직 덜 눌림 (BB 기준)
+        if close > bb_lower * 1.02:
+            return True, "아직 덜 눌림"
+
+        # 5. 음봉
+        if df["close"].iloc[-1] < df["open"].iloc[-1]:
+            return True, "음봉"
+
+        return False, ""
+
     @abstractmethod
     def evaluate(
         self,
