@@ -1,5 +1,4 @@
 from .base import BaseStrategy, Signal, SignalType
-from src.utils.logger import logger
 
 
 class VWAPReversionStrategy(BaseStrategy):
@@ -114,7 +113,7 @@ class VWAPReversionStrategy(BaseStrategy):
                 return Signal(
                     SignalType.BUY,
                     ticker,
-                    f"VWAP Dip s:{score:.2f} (Dist: {distance_to_vwap*100:.1f}%, RSI: {rsi:.1f}), CP: {current_price}, BB_Low: {bb_lower})",
+                    f"VWAP Dip s:{score:.2f} (Dist: {distance_to_vwap*100:.1f}%, RSI: {rsi:.1f}, CP: {current_price:.2f}, BB_Low: {bb_lower*1.02:.2f})",
                     strength,
                 )
 
