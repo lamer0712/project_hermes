@@ -32,7 +32,7 @@ class BreakoutStrategy(BaseStrategy):
             },
             "entry": {
                 "timeframe": "15m",
-                "volume_multiplier": 1.6,
+                "volume_multiplier": 1.4,
                 "breakout_buffer": 0.002,
             },
             "exit": {
@@ -119,7 +119,9 @@ class BreakoutStrategy(BaseStrategy):
         # =========================
         # ENTRY (15m)
         # =========================
-        recent_high = entry_market_data.high.rolling(20).max().iloc[-2]
+        high_20 = entry_market_data.high.rolling(20).max()
+        recent_high = high_20.iloc[-2]
+        prev_high = high_20.iloc[-3]
 
         if self.is_downtrend(entry_market_data):
             return Signal(SignalType.HOLD, ticker, "하락 추세", 0)
@@ -128,7 +130,7 @@ class BreakoutStrategy(BaseStrategy):
 
         entry_cfg = self.params["entry"]
 
-        breakout = price > recent_high
+        breakout = prev_price <= prev_high and price > recent_high
 
         if not breakout:
             return Signal(
@@ -162,8 +164,8 @@ class BreakoutStrategy(BaseStrategy):
             prev_price > entry_market_data.close.iloc[-3] * 1.02
             and price > prev_price * 1.02
         ):
-            strength *= 0.5
-            reasons.append("Overheating penalty (x0.5)")
+            strength -= 0.2
+            reasons.append("Overheating penalty (-0.2)")
 
         if strength >= 0.6:
 
