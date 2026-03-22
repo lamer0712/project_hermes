@@ -37,6 +37,13 @@ class BaseStrategy(ABC):
         self.regime = params.get("regime", None)
 
     @staticmethod
+    def is_downtrend(df):
+        ema20 = df["ema_20"].iloc[-1]
+        ema50 = df["ema_50"].iloc[-1]
+
+        return ema20 < ema50
+
+    @staticmethod
     def is_fake_dip(df):
         ema20 = df["ema_20"].iloc[-1]
         ema50 = df["ema_50"].iloc[-1]

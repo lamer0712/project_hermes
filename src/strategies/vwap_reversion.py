@@ -77,6 +77,9 @@ class VWAPReversionStrategy(BaseStrategy):
         # =========================
         # ENTRY (15m)
         # =========================
+        if self.is_downtrend(entry_market_data):
+            return Signal(SignalType.HOLD, ticker, "하락 추세", 0)
+
         distance_to_vwap = (current_price - vwap) / vwap
         distance = abs(distance_to_vwap)
 

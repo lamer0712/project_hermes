@@ -132,6 +132,9 @@ class BreakoutStrategy(BaseStrategy):
                 0,
             )
 
+        if self.is_downtrend(entry_market_data):
+            return Signal(SignalType.HOLD, ticker, "하락 추세", 0)
+
         reasons = []
 
         entry_cfg = self.params["entry"]

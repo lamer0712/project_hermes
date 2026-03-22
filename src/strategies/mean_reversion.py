@@ -121,6 +121,9 @@ class MeanReversionStrategy(BaseStrategy):
         if price <= prev_price:
             return Signal(SignalType.HOLD, ticker, "하락 중", 0)
 
+        if self.is_downtrend(entry_market_data):
+            return Signal(SignalType.HOLD, ticker, "하락 추세", 0)
+
         is_fake_dip, reason = self.is_fake_dip(entry_market_data)
         if is_fake_dip:
             return Signal(SignalType.HOLD, ticker, f"가짜 눌림목 ({reason})", 0)

@@ -108,6 +108,9 @@ class PullbackTrendStrategy(BaseStrategy):
         reasons = []
         strength = 0
 
+        if self.is_downtrend(entry_market_data):
+            return Signal(SignalType.HOLD, ticker, "하락 추세", 0)
+
         rsi_cross_trigger = (
             rsi_entry > self.params["entry"]["rsi_threshold"]
             and prev_rsi_entry <= self.params["entry"]["rsi_threshold"]
