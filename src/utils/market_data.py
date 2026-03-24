@@ -107,34 +107,43 @@ class UpbitMarketData:
         low20 = df.low_20.iloc[-1]
 
         ema_now = df.ema_20.iloc[-1]
-        ema_prev = df.ema_20.iloc[-5]
+        ema_prev = df.ema_20.iloc[-10]
 
         volatility = (high20 - low20) / price
         trend_strength = abs(ma20 - ma60) / ma60
         ema_slope = (ema_now - ema_prev) / ema_prev
 
-        # print(
-        #     f"Regime {ticker:<10} | ma20: {ma20:.3f},{ma60:.3f} | rsi(55↑,44↓): {rsi:.3f} | adx: {adx>18} | ema_slope: {ema_slope>0} | volatility: {volatility>0.05} | trend_strength: {trend_strength>0.02}"
-        # )
-        # Bullish
         # 1. Panic
-        if rsi < 35 and ema_slope < -0.01 and volatility > 0.06 and adx > 20:
+        if (
+            rsi < 35
+            and ema_slope < -0.01
+            and volatility > 0.06
+            and adx > 20
+            and price < low20 * 1.02
+        ):
             return "panic"
 
-        # 2. Volatile (먼저!)
-        if volatility > 0.05 and trend_strength < 0.015:
+        # 2. Volatile (진짜 랜덤)
+        if volatility > 0.05 and trend_strength < 0.015 and adx < 20:
             return "volatile"
 
-        # 3. Bullish
-        if ma20 > ma60 * 1.005 and rsi > 55 and ema_slope > 0 and adx > 20:
+        # 3. Early Bull (핵심 추가)
+        if ma20 > ma60 and ema_slope > 0 and adx > 18:
+            return "bearish"
+
+        # 4. Strong Bull
+        if ma20 > ma60 * 1.005 and rsi > 55 and adx > 22:
             return "bullish"
 
-        # 4. Bearish
+        # 5. Bearish
         if ma20 < ma60 * 0.995 and rsi < 45 and ema_slope < 0 and adx > 20:
             return "bearish"
 
-        # 5. Ranging
-        return "ranging"
+        # 6. Ranging (명확 정의)
+        if trend_strength < 0.01 and adx < 18:
+            return "ranging"
+
+        return "neutral"
 
     @classmethod
     def get_ohlcv(
