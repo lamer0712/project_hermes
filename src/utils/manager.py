@@ -113,7 +113,15 @@ class ManagerAgent:
                 except Exception as e:
                     print(ticker, e)
 
-            target_strategy_names = self.strategy_map.get(ticker_regime, None)
+            target_strategy_names = None
+            if is_held:
+                saved_strategy = holdings[ticker].get("strategy")
+                if saved_strategy and saved_strategy != "Unknown":
+                    target_strategy_names = [saved_strategy]
+            
+            if target_strategy_names is None:
+                target_strategy_names = self.strategy_map.get(ticker_regime, None)
+
             if target_strategy_names is None:
                 ticker_stats[ticker] = {
                     "ticker": ticker,
@@ -192,7 +200,7 @@ class ManagerAgent:
             log = f" - Stretegy : {best_buy_strategy.name}\n\t{sig_str}"
             logger.info(log)
             self.notifier.send_message(log)
-            self._execute_buy(ticker, current_price, signal_best, atr=atr)
+            self._execute_buy(ticker, current_price, signal_best, atr=atr, strategy_name=best_buy_strategy.name)
 
         # /eval 조회 등을 위해 최근 평가결과를 저장
         self.last_ticker_stats = ticker_stats
@@ -315,6 +323,7 @@ class ManagerAgent:
         current_price: float,
         signal,
         atr: float = 0.0,
+        strategy_name: str = "Unknown",
     ) -> None:
         """매수 실행 (PortfolioManager 연동)"""
         if not self.broker.is_configured():
@@ -444,6 +453,7 @@ class ManagerAgent:
                         price=current_price,
                         executed_funds=executed_funds,
                         paid_fee=paid_fee,
+                        strategy=strategy_name,
                     )
 
                     if atr > 0:

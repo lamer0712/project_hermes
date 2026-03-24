@@ -69,6 +69,7 @@ class PortfolioManager:
                             "max_price": h["max_price"],
                             "sl_levels_hit": h["sl_levels_hit"],
                             "atr_14": h.get("atr_14", 0),
+                            "strategy": h.get("strategy", "Unknown"),
                         }
                     self.portfolios[agent_name]["holdings"] = mem_holdings
 
@@ -147,6 +148,7 @@ class PortfolioManager:
         price: float,
         executed_funds: float = None,
         paid_fee: float = 0.0,
+        strategy: str = "Unknown",
     ) -> bool:
         """
         매수 기록. 성공 시 True, 잔고 부족 시 False.
@@ -194,6 +196,7 @@ class PortfolioManager:
                 "max_price": existing.get("max_price", price),
                 "sl_levels_hit": existing.get("sl_levels_hit", []),
                 "atr_14": existing.get("atr_14", 0),
+                "strategy": strategy,
             }
         else:
             holdings[ticker] = {
@@ -203,12 +206,13 @@ class PortfolioManager:
                 "max_price": price,
                 "sl_levels_hit": [],
                 "atr_14": 0,
+                "strategy": strategy,
             }
 
         portfolio["total_trades"] = portfolio.get("total_trades", 0) + 1
         self.save_state()
         self.db.record_trade(
-            agent_name, ticker, "buy", volume, price, executed_funds, paid_fee
+            agent_name, ticker, "buy", volume, price, executed_funds, paid_fee, strategy=strategy
         )
         self.export_portfolio_report(agent_name)
         logger.info(
@@ -266,9 +270,11 @@ class PortfolioManager:
         if profit > 0:
             portfolio["winning_trades"] = portfolio.get("winning_trades", 0) + 1
 
+        strategy = holdings.get(ticker, {}).get("strategy", "Unknown")
+
         self.save_state()
         self.db.record_trade(
-            agent_name, ticker, "sell", volume, price, sell_revenue_gross, paid_fee
+            agent_name, ticker, "sell", volume, price, sell_revenue_gross, paid_fee, strategy=strategy
         )
         self.export_portfolio_report(agent_name)
         profit_emoji = "⏫" if profit > 0 else "⏬"
@@ -558,10 +564,12 @@ class PortfolioManager:
                         "sl_levels_hit", []
                     )
                     data["atr_14"] = old_holdings[ticker].get("atr_14", 0)
+                    data["strategy"] = old_holdings[ticker].get("strategy", "Unknown")
                 else:
                     data["max_price"] = data["avg_price"]
                     data["sl_levels_hit"] = []
                     data["atr_14"] = 0
+                    data["strategy"] = "Unknown"
 
                 self.portfolios[agent_name]["holdings"][ticker] = data
                 allocated_costs += data["total_cost"]
