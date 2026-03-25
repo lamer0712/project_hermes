@@ -46,7 +46,7 @@ class ManagerAgent:
         self,
         setup_market_data: dict,
         entry_market_data: dict,
-        btc_regime: str = "ranging",
+        market_regime: str = "ranging",
     ) -> None:
         """
         [싸이클 단위 실행]
@@ -66,10 +66,10 @@ class ManagerAgent:
             return
 
         # 거시 시장 매수 필터 (하락/패닉일 경우 신규 매수 차단)
-        buy_filter_passed = btc_regime not in ["bearish", "panic"]
+        buy_filter_passed = market_regime not in ["bearish", "panic"]
         if not buy_filter_passed:
             logger.info(
-                f"⚠️ 거시 시장 침체({btc_regime}): 신규 매수 차단, 매도만 수행합니다."
+                f"⚠️ 거시 시장 침체({market_regime}): 신규 매수 차단, 매도만 수행합니다."
             )
 
         buy_candidates = []
@@ -245,7 +245,7 @@ class ManagerAgent:
 
         # 리포트 전송
         try:
-            self._send_cycle_report(btc_regime, ticker_stats)
+            self._send_cycle_report(market_regime, ticker_stats)
             # 포트폴리오 상태 파일(portfolio.md) 업데이트
             if self.portfolio_manager:
                 current_prices = {
@@ -259,7 +259,7 @@ class ManagerAgent:
 
         self.notifier.flush_buffer()
 
-    def _send_cycle_report(self, btc_regime: str, ticker_stats: dict) -> None:
+    def _send_cycle_report(self, market_regime: str, ticker_stats: dict) -> None:
         """
         매 싸이클 결과 요약 리포트를 텔레그램으로 전송합니다.
         """
@@ -274,9 +274,9 @@ class ManagerAgent:
         if not summary:
             return
 
-        # 1. BTC Regime & 기본 자산 정보
+        # 1. Market Regime & 기본 자산 정보
         msg = f"📊 **Hermes Investment Report**\n"
-        msg += f"🌐 BTC Regime: {btc_regime.upper()}\n"
+        msg += f"🌐 Market Regime: {market_regime.upper()}\n"
         msg += f"💰 총 자산: {summary['total_value']:,.0f} KRW\n"
         msg += f"💵 현금 자산: {summary['cash']:,.0f} KRW ({summary['return_rate']:+.2f}%)\n\n"
 
@@ -319,11 +319,11 @@ class ManagerAgent:
 
         # 4. 추가 추천 내용
         msg += "💡 **AI 추천 & 인사이트**\n"
-        if btc_regime in ["bearish", "panic"]:
+        if market_regime in ["bearish", "panic"]:
             msg += (
                 "⚠️ 시장이 침체기입니다. 현금 비중을 유지하며 보수적으로 접근하세요.\n"
             )
-        elif btc_regime == "bullish":
+        elif market_regime == "bullish":
             msg += "🚀 시장이 강세입니다. 추세 추종 전략이 유효할 가능성이 큽니다.\n"
         else:
             msg += (

@@ -4,9 +4,10 @@ import concurrent.futures
 from src.utils.logger import logger
 import pandas as pd
 import talib
+from src.interfaces.market_data import BaseMarketData
 
 
-class UpbitMarketData:
+class UpbitMarketData(BaseMarketData):
     """Upbit API를 통해 거시 데이터, 캔들 데이터 및 지표를 계산하는 클래스"""
 
     BASE_URL = "https://api.upbit.com/v1"
@@ -61,7 +62,7 @@ class UpbitMarketData:
         return adx, plus_di, minus_di
 
     @staticmethod
-    def btc_regime():
+    def market_regime():
         df = UpbitMarketData.get_ohlcv_with_indicators_new(
             "KRW-BTC", count=100, interval="minutes/60"
         )
