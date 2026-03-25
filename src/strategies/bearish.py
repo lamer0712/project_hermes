@@ -51,19 +51,19 @@ class BearishStrategy(BaseStrategy):
         # =========================
         if is_held:
             if price <= entry_price * self.params["exit"]["stop_loss"]:
-                return Signal(SignalType.SELL, ticker, "Stop loss", 1.0)
+                return Signal(SignalType.SELL, ticker, "[손절] 칼손절선 도달", 1.0, 1.0)
 
             # 짧게 먹기
             if price >= entry_price * self.params["exit"]["quick_tp"]:
-                return Signal(SignalType.SELL, ticker, "Quick TP", 0.7)
+                return Signal(SignalType.SELL, ticker, "[익절] 단기반등 목표가", 0.7, 1.0)
 
             if rsi > self.params["exit"]["rsi_over"]:
-                return Signal(SignalType.SELL, ticker, "RSI exit", 0.7)
+                return Signal(SignalType.SELL, ticker, "[익절/손절] RSI 반등끝", 0.7, 1.0)
 
             if price < ma9:
-                return Signal(SignalType.SELL, ticker, "MA9 break", 0.8)
+                return Signal(SignalType.SELL, ticker, "[익절/손절] 단기안전선(MA9) 이탈", 0.8, 1.0)
 
-            return Signal(SignalType.HOLD, ticker, "", 0)
+            return Signal(SignalType.HOLD, ticker, "홀딩 (반등 중)", 0, 0.0)
 
         # =========================
         # ENTRY → 제한적 반등만
@@ -82,8 +82,9 @@ class BearishStrategy(BaseStrategy):
             return Signal(
                 SignalType.BUY,
                 ticker,
-                "Filtered rebound",
+                "단기 하락 과대 (기술적 반등)",
                 self.params["position_size_ratio"],
+                0.8,
             )
 
-        return Signal(SignalType.HOLD, ticker, "No trade (bearish)", 0)
+        return Signal(SignalType.HOLD, ticker, "대기 (하락장 관망)", 0, 0.0)

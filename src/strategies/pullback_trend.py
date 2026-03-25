@@ -33,7 +33,7 @@ class PullbackTrendStrategy(BaseStrategy):
                 "volume_multiplier": 1.4,
             },
             "exit": {
-                "rsi_threshold": 80,
+                "rsi_threshold": 85,
             },
             "position_size_ratio": 1.0,
         }
@@ -66,22 +66,33 @@ class PullbackTrendStrategy(BaseStrategy):
         # =========================
 
         if is_held:
-            rsi_sell = rsi_entry > self.params["exit"]["rsi_threshold"]
+            ma20 = float(entry_market_data.ma_20.iloc[-1])
+            rsi_sell = rsi_entry > self.params["exit"].get("rsi_threshold", 85)
 
             if rsi_sell:
-                strength = min((rsi_entry - 60) / 40 + 0.5, 1.0)
                 return Signal(
                     SignalType.SELL,
                     ticker,
-                    f"Exit rsi:{rsi_entry:.1f} overbought",
-                    strength,
+                    f"[익절] RSI 극과열 ({rsi_entry:.1f})",
+                    1.0,
+                    1.0,
+                )
+                
+            if current_price < ma20:
+                return Signal(
+                    SignalType.SELL,
+                    ticker,
+                    f"[익절/손절] 생명선(MA20) 이탈",
+                    1.0,
+                    1.0,
                 )
 
             return Signal(
                 SignalType.HOLD,
                 ticker,
-                "보유 중, 추세 유지",
+                "홀딩 (추세 유지)",
                 0,
+                0.0,
             )
 
         # =========================
@@ -109,7 +120,7 @@ class PullbackTrendStrategy(BaseStrategy):
         strength = 0
 
         if self.is_downtrend(entry_market_data):
-            return Signal(SignalType.HOLD, ticker, "하락 추세", 0)
+            return Signal(SignalType.HOLD, ticker, "대기 (하락 추세)", 0, 0.0)
 
         rsi_cross_trigger = (
             rsi_entry > self.params["entry"]["rsi_threshold"]
@@ -118,22 +129,20 @@ class PullbackTrendStrategy(BaseStrategy):
 
         if rsi_cross_trigger:
             strength += 0.4
-            reasons.append(
-                f"RSI rebound ({rsi_entry:.1f} > {self.params['entry']['rsi_threshold']})"
-            )
+            reasons.append(f"RSI반등({rsi_entry:.0f})")
 
         ma_cross = prev_price <= prev_ma9 and current_price > ma9
 
         if ma_cross:
             strength += 0.3
-            reasons.append(f"MA9 breakout (P:{current_price:.2f} > MA9:{ma9:.2f})")
+            reasons.append(f"MA9돌파")
 
         volume_trigger = volume > vol_ma * self.params["entry"]["volume_multiplier"]
 
         if volume_trigger:
             strength += 0.3
             vol_ratio = (volume / vol_ma) * 100 if vol_ma > 0 else 0
-            reasons.append(f"Volume spike ({vol_ratio:.1f}%)")
+            reasons.append(f"거래량급증({vol_ratio:.0f}%)")
 
         if setup_ok and strength >= 0.5:
 
@@ -144,6 +153,7 @@ class PullbackTrendStrategy(BaseStrategy):
                 ticker,
                 " | ".join(reasons),
                 strength * size_ratio,
+                strength,
             )
 
         strong_breakout = (
@@ -155,20 +165,19 @@ class PullbackTrendStrategy(BaseStrategy):
         )
 
         if strong_breakout:
+            size_ratio = self.params["position_size_ratio"]
             return Signal(
                 SignalType.BUY,
                 ticker,
-                "Strong breakout",
-                0.7,
+                "강한 돌파 (Strong Breakout)",
+                0.7 * size_ratio,
+                0.8,
             )
 
         return Signal(
             SignalType.HOLD,
             ticker,
-            (
-                f"Entry 대기 {strength}>0.5, reasons: {reasons}"
-                if setup_ok
-                else "Setup 미충족"
-            ),
+            f"진입대기 (점수:{strength:.1f})" if setup_ok else "대기 (Setup 미충족)",
             0,
+            0.0,
         )

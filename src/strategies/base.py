@@ -19,10 +19,11 @@ class Signal:
     reason: str
     # 매수 시: 투자금 대비 비율 (0.0 ~ 1.0), 매도 시: 보유 수량 대비 비율
     strength: float = 0.5
+    confidence: float = 0.0
 
     def __str__(self):
         emoji = {"BUY": "🟢", "SELL": "🔴", "HOLD": "⏸️"}
-        return f"{emoji.get(self.type.value, '❓')}{self.type.value:<4} {self.ticker} | (S: {self.strength:.0%} , {self.reason})"
+        return f"{emoji.get(self.type.value, '❓')}{self.type.value:<4} {self.ticker} | (Conf: {self.confidence:.0%}, Size: {self.strength:.0%} , {self.reason})"
 
 
 class BaseStrategy(ABC):

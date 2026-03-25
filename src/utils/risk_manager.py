@@ -66,8 +66,10 @@ class RiskManager:
 
             partial_stop_loss_list = []
             for item in base_partial_sl:
+                multiplier = item["pct"] / base_stop_loss_pct if base_stop_loss_pct != 0 else 1.0
+                dynamic_pct = round(stop_loss_pct * multiplier, 2)
                 partial_stop_loss_list.append(
-                    {"pct": item["pct"], "strength": item["strength"]}
+                    {"pct": dynamic_pct, "strength": item["strength"]}
                 )
         else:
             stop_loss_pct = base_stop_loss_pct
@@ -91,20 +93,26 @@ class RiskManager:
                 return Signal(
                     type=SignalType.SELL,
                     ticker=ticker,
-                    reason=f"트레일링 스탑 (수익률 {profit_pct:.2f}%)",
+                    reason=f"[익절/손절] 트레일링 스탑 ({profit_pct:.1f}%)",
                     strength=1.0,
+                    confidence=1.0,
                 )
 
         # 2. 강제 익절
-        if profit_pct >= take_profit_pct:
+        tp_levels_hit = holdings[ticker].get("tp_levels_hit", [])
+        if profit_pct >= take_profit_pct and take_profit_pct not in tp_levels_hit:
             logger.info(
                 f"🎯 강제 익절 발동: {ticker} (수익률 {profit_pct:.2f}% >= {take_profit_pct}%)"
+            )
+            self.portfolio_manager.update_holding_metadata(
+                agent_name, ticker, hit_tp_level=take_profit_pct
             )
             return Signal(
                 type=SignalType.SELL,
                 ticker=ticker,
-                reason=f"강제 익절 (수익률 {profit_pct:.2f}%)",
+                reason=f"[익절] 목표수익 타겟 ({profit_pct:.1f}%)",
                 strength=0.5,
+                confidence=1.0,
             )
 
         # 3. 분할 강제 손절
@@ -125,8 +133,9 @@ class RiskManager:
                     return Signal(
                         type=SignalType.SELL,
                         ticker=ticker,
-                        reason=f"분할 손절 단계 {stage_pct}% (현재 {profit_pct:.2f}%)",
+                        reason=f"[손절] 분할 스탑로스 단계 {stage_pct}%",
                         strength=stage_strength,
+                        confidence=1.0,
                     )
 
         # 4. 단일 기본 손절
@@ -137,8 +146,9 @@ class RiskManager:
             return Signal(
                 type=SignalType.SELL,
                 ticker=ticker,
-                reason=f"강제 손절 (수익률 {profit_pct:.2f}%)",
+                reason=f"[손절] 메인 스탑로스 ({profit_pct:.1f}%)",
                 strength=1.0,
+                confidence=1.0,
             )
 
         return None

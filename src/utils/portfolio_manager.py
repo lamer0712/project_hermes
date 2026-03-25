@@ -68,6 +68,7 @@ class PortfolioManager:
                             "total_cost": h["volume"] * h["avg_price"],
                             "max_price": h["max_price"],
                             "sl_levels_hit": h["sl_levels_hit"],
+                            "tp_levels_hit": h.get("tp_levels_hit", []),
                             "atr_14": h.get("atr_14", 0),
                             "strategy": h.get("strategy", "Unknown"),
                         }
@@ -195,6 +196,7 @@ class PortfolioManager:
                 "total_cost": new_total,
                 "max_price": existing.get("max_price", price),
                 "sl_levels_hit": existing.get("sl_levels_hit", []),
+                "tp_levels_hit": existing.get("tp_levels_hit", []),
                 "atr_14": existing.get("atr_14", 0),
                 "strategy": strategy,
             }
@@ -205,6 +207,7 @@ class PortfolioManager:
                 "total_cost": total_cost_excluding_fee,
                 "max_price": price,
                 "sl_levels_hit": [],
+                "tp_levels_hit": [],
                 "atr_14": 0,
                 "strategy": strategy,
             }
@@ -337,6 +340,7 @@ class PortfolioManager:
         ticker: str,
         max_price: float = None,
         hit_sl_level: float = None,
+        hit_tp_level: float = None,
         atr_14: float = None,
     ) -> bool:
         """
@@ -363,6 +367,13 @@ class PortfolioManager:
             if hit_sl_level not in sl_levels:
                 sl_levels.append(hit_sl_level)
                 holding["sl_levels_hit"] = sl_levels
+                modified = True
+
+        if hit_tp_level is not None:
+            tp_levels = holding.get("tp_levels_hit", [])
+            if hit_tp_level not in tp_levels:
+                tp_levels.append(hit_tp_level)
+                holding["tp_levels_hit"] = tp_levels
                 modified = True
 
         if atr_14 is not None:
@@ -563,11 +574,15 @@ class PortfolioManager:
                     data["sl_levels_hit"] = old_holdings[ticker].get(
                         "sl_levels_hit", []
                     )
+                    data["tp_levels_hit"] = old_holdings[ticker].get(
+                        "tp_levels_hit", []
+                    )
                     data["atr_14"] = old_holdings[ticker].get("atr_14", 0)
                     data["strategy"] = old_holdings[ticker].get("strategy", "Unknown")
                 else:
                     data["max_price"] = data["avg_price"]
                     data["sl_levels_hit"] = []
+                    data["tp_levels_hit"] = []
                     data["atr_14"] = 0
                     data["strategy"] = "Unknown"
 
