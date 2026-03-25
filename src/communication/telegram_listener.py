@@ -207,10 +207,10 @@ async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
 
     if isinstance(context.error, NetworkError):
         logger.error(
-            f"[Telegram Listener] Network Warning: {context.error} (Retrying...)"
+            f"[Telegram Listener] Network Warning: {type(context.error).__name__} - {context.error} (Polling will retry automatically)"
         )
     else:
-        logger.error(f"[Telegram Listener] Unhandled error: {context.error}")
+        logger.error(f"[Telegram Listener] Unhandled error: {type(context.error).__name__} - {context.error}")
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):

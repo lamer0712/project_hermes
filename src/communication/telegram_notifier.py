@@ -1,5 +1,7 @@
 import os
 import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -24,6 +26,19 @@ class TelegramNotifier:
         self.api_url = f"https://api.telegram.org/bot{self.bot_token}/sendMessage"
         self.is_buffering = False
         self.message_buffer = []
+        
+        # 세션 및 재시도 설정
+        self.session = requests.Session()
+        retry_strategy = Retry(
+            total=3,  # 최대 3회 재시도
+            backoff_factor=1,  # 재시도 간격 (1초, 2초, 4초...)
+            status_forcelist=[429, 500, 502, 503, 504],  # 재시도할 HTTP 상태 코드
+            allowed_methods=["POST"],
+        )
+        adapter = HTTPAdapter(max_retries=retry_strategy)
+        self.session.mount("https://", adapter)
+        self.session.mount("http://", adapter)
+        
         self._initialized = True
 
     def is_configured(self) -> bool:
@@ -83,18 +98,19 @@ class TelegramNotifier:
         }
 
         try:
-            response = requests.post(self.api_url, json=payload, timeout=5)
+            # 설정된 세션을 사용하여 재시도 로직 적용
+            response = self.session.post(self.api_url, json=payload, timeout=5)
             response.raise_for_status()
             return True
         except requests.exceptions.HTTPError as e:
-            if response.status_code == 400:
+            if hasattr(e, 'response') and e.response is not None and e.response.status_code == 400:
                 # Markdown 파싱 실패 시 parse_mode 없이 재전송
                 payload_plain = {
                     "chat_id": self.chat_id,
                     "text": text,
                 }
                 try:
-                    response2 = requests.post(
+                    response2 = self.session.post(
                         self.api_url, json=payload_plain, timeout=5
                     )
                     response2.raise_for_status()
