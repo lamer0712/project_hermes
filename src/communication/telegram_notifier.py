@@ -26,7 +26,7 @@ class TelegramNotifier:
         self.api_url = f"https://api.telegram.org/bot{self.bot_token}/sendMessage"
         self.is_buffering = False
         self.message_buffer = []
-        
+
         # 세션 및 재시도 설정
         self.session = requests.Session()
         retry_strategy = Retry(
@@ -38,7 +38,7 @@ class TelegramNotifier:
         adapter = HTTPAdapter(max_retries=retry_strategy)
         self.session.mount("https://", adapter)
         self.session.mount("http://", adapter)
-        
+
         self._initialized = True
 
     def is_configured(self) -> bool:
@@ -77,6 +77,8 @@ class TelegramNotifier:
         """
         if self.is_buffering:
             if "**Hermes Investment Report**" in text:
+                if len(self.message_buffer) == 1:  # "[log]"만 있는 경우
+                    self.message_buffer.pop()
                 self.message_buffer.insert(0, text)
             else:
                 self.message_buffer.append(text)
@@ -103,7 +105,11 @@ class TelegramNotifier:
             response.raise_for_status()
             return True
         except requests.exceptions.HTTPError as e:
-            if hasattr(e, 'response') and e.response is not None and e.response.status_code == 400:
+            if (
+                hasattr(e, "response")
+                and e.response is not None
+                and e.response.status_code == 400
+            ):
                 # Markdown 파싱 실패 시 parse_mode 없이 재전송
                 payload_plain = {
                     "chat_id": self.chat_id,
