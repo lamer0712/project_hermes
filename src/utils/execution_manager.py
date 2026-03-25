@@ -104,10 +104,10 @@ class ExecutionManager:
         risk_manager_params: dict,
         atr: float = 0.0,
         strategy_name: str = "Unknown",
-    ) -> None:
-        """비동기 매수 실행"""
+    ) -> bool:
+        """비동기 매수 실행 (성공 시 True, 기각 시 False 반환)"""
         if not self.broker.is_configured():
-            return
+            return False
 
         # 투자금 계산 로직
         if self.portfolio_manager:
@@ -147,7 +147,7 @@ class ExecutionManager:
             logger.warning(
                 f"[ExecutionManager] 잔고 부족: 주문 금액({order_amount:,.0f} KRW)이 최소 기준 미달 → 매수 취소"
             )
-            return
+            return False
 
         # 매수 전 호가창(Orderbook) 불균형 필터
         orderbooks = self.broker.get_orderbook(ticker)
@@ -161,7 +161,8 @@ class ExecutionManager:
                 logger.warning(
                     f"🚫 [Orderbook Filter] {ticker} 얇은 매도 잔고(ask: {total_ask:.2f} < bid: {total_bid:.2f}*0.7). 진입 기각."
                 )
-                return
+                self.notifier.send_message(f"🚫 [Orderbook Filter] {ticker} 얇은 매도 잔고(ask: {total_ask:.2f} < bid: {total_bid:.2f}*0.7). 진입 기각.")
+                return False
 
         stop_loss_pct = risk_manager_params.get("stop_loss_pct", -5.0)
         if atr > 0:
@@ -191,6 +192,9 @@ class ExecutionManager:
                     "strategy_name": strategy_name,
                     "volume": order_amount / current_price # fallback obj
                 }
+                return True
+        
+        return False
 
     def execute_sell(
         self, agent_name: str, ticker: str, current_price: float, signal
