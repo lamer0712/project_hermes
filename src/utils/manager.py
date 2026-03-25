@@ -54,7 +54,6 @@ class ManagerAgent:
         매수는 가장 강한 시그널의 1종목만 실행합니다.
         """
         self.notifier.start_buffering()
-        self.notifier.send_message(f"========== Trading Start ==========")
         self.execution_manager.check_pending_orders()
         if not setup_market_data or not entry_market_data:
             self.notifier.flush_buffer()
@@ -72,8 +71,7 @@ class ManagerAgent:
                 f"⚠️ 거시 시장 침체({btc_regime}): 신규 매수 차단, 매도만 수행합니다."
             )
 
-        best_buy = None  # (signal, market_data)
-        best_buy_strategy = None
+        buy_candidates = []
 
         portfolio_info = None
         current_prices = {}
@@ -194,38 +192,51 @@ class ManagerAgent:
                 # 이미 보유 중이면 스킵
                 if is_held:
                     continue
-                # 더 확신도가 강한 시그널이면 교체
-                if best_buy is None or signal.confidence > best_buy[0].confidence:
-                    best_buy = (signal, market_data)
-                    best_buy_strategy = strategy
+                # 통과한 시그널을 후보 리스트에 수집
+                buy_candidates.append((signal, strategy, market_data))
 
-        # 가장 강한 매수 시그널 1개만 실행
-        if best_buy and best_buy_strategy:
-            signal_best, market_data_best = best_buy
-            ticker = signal_best.ticker
-            current_price = float(market_data_best.close.iloc[-1])
+        # 후보들을 confidence 기준 내림차순 정렬
+        buy_candidates.sort(key=lambda x: x[0].confidence, reverse=True)
+
+        # 가장 강한 매수 시그널부터 순차 실행 시도 (1개 체결/접수 성공 시 즉시 루프 탈출)
+        for cand_signal, cand_strategy, cand_market_data in buy_candidates:
+            ticker = cand_signal.ticker
+            current_price = float(cand_market_data.close.iloc[-1])
             atr = (
-                float(market_data_best["atr_14"].iloc[-1])
-                if "atr_14" in market_data_best
+                float(cand_market_data["atr_14"].iloc[-1])
+                if "atr_14" in cand_market_data
                 else 0.0
             )
 
-            sig_str = signal_best.__str__()
-            log = f" - Stretegy : {best_buy_strategy.name}\n\t{sig_str}"
+            sig_str = cand_signal.__str__()
+            log = f" - Stretegy : {cand_strategy.name}\n\t{sig_str}"
             logger.info(log)
             self.notifier.send_message(log)
-            self.execution_manager.execute_buy(
+
+            success = self.execution_manager.execute_buy(
                 self.name,
                 ticker,
                 current_price,
-                signal_best,
+                cand_signal,
                 self.risk_manager.risk_params,
                 atr=atr,
-                strategy_name=best_buy_strategy.name,
+                strategy_name=cand_strategy.name,
             )
+
+            # 성공 시 루프 중단 (단일 종목 매매)
+            if success:
+                logger.info(
+                    f"[ManagerAgent] {ticker} 매수 접수 성공. 후순위 매수 후보 기각."
+                )
+                break
 
         # /eval 조회 등을 위해 최근 평가결과를 저장
         self.last_ticker_stats = ticker_stats
+
+        # 이번 사이클 내에서 방금 발주한 거래가 체결 완료됐는지 0.5초 대기 후 마지막 확인
+        import time
+        time.sleep(0.5)
+        self.execution_manager.check_pending_orders()
 
         # 리포트 전송
         try:

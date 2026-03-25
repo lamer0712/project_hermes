@@ -215,11 +215,18 @@ class PortfolioManager:
         portfolio["total_trades"] = portfolio.get("total_trades", 0) + 1
         self.save_state()
         self.db.record_trade(
-            agent_name, ticker, "buy", volume, price, executed_funds, paid_fee, strategy=strategy
+            agent_name,
+            ticker,
+            "buy",
+            volume,
+            price,
+            executed_funds,
+            paid_fee,
+            strategy=strategy,
         )
         self.export_portfolio_report(agent_name)
         logger.info(
-            f"[Manager] ✅ {agent_name} 매수 기록: {ticker} 거래수량: {volume:.6f}, 단가: {price:,.0f}, 거래금액: {total_cost_excluding_fee:,.0f}, 수수료: {paid_fee:,.2f}, 정산금액: {total_cost_including_fee:,.0f}, 잔여현금: {portfolio['cash']:,.0f})"
+            f"✅ 매수: {ticker} 거래수량: {volume:.6f}, 단가: {price:,.0f}, 거래금액: {total_cost_excluding_fee:,.0f}, 수수료: {paid_fee:,.2f}, 정산금액: {total_cost_including_fee:,.0f}, 잔여현금: {portfolio['cash']:,.0f})"
         )
         return True
 
@@ -277,11 +284,18 @@ class PortfolioManager:
 
         self.save_state()
         self.db.record_trade(
-            agent_name, ticker, "sell", volume, price, sell_revenue_gross, paid_fee, strategy=strategy
+            agent_name,
+            ticker,
+            "sell",
+            volume,
+            price,
+            sell_revenue_gross,
+            paid_fee,
+            strategy=strategy,
         )
         self.export_portfolio_report(agent_name)
         profit_emoji = "⏫" if profit > 0 else "⏬"
-        msg = f"{profit_emoji}{ticker} - 거래수량: {volume:.3f}, 단가: {price:,.0f}, 거래금액: {sell_revenue_gross:,.0f}, 수수료: {paid_fee:,.2f}, 정산금액: {sell_revenue_net:,.0f}, 손익: {profit:+,.0f}({profit_ratio:+.2f}%)"
+        msg = f"{profit_emoji} 매도: {ticker} 거래수량: {volume:.3f}, 단가: {price:,.0f}, 거래금액: {sell_revenue_gross:,.0f}, 수수료: {paid_fee:,.2f}, 정산금액: {sell_revenue_net:,.0f}, 손익: {profit:+,.0f}({profit_ratio:+.2f}%)"
         logger.info(msg)
         self.notifier.send_message(msg)
         return True
