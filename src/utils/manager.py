@@ -200,6 +200,9 @@ class ManagerAgent:
 
         # 가장 강한 매수 시그널부터 순차 실행 시도 (1개 체결/접수 성공 시 즉시 루프 탈출)
         for cand_signal, cand_strategy, cand_market_data in buy_candidates:
+            if cand_signal.confidence <= 0.3:
+                break
+
             ticker = cand_signal.ticker
             current_price = float(cand_market_data.close.iloc[-1])
             atr = (
@@ -235,6 +238,7 @@ class ManagerAgent:
 
         # 이번 사이클 내에서 방금 발주한 거래가 체결 완료됐는지 0.5초 대기 후 마지막 확인
         import time
+
         time.sleep(0.5)
         self.execution_manager.check_pending_orders()
 
