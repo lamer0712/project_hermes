@@ -54,6 +54,7 @@ class ManagerAgent:
         매수는 가장 강한 시그널의 1종목만 실행합니다.
         """
         self.notifier.start_buffering()
+        self.notifier.send_message("[log]")
         self.execution_manager.check_pending_orders()
         if not setup_market_data or not entry_market_data:
             self.notifier.flush_buffer()
