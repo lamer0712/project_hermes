@@ -150,12 +150,19 @@ class MeanReversionStrategy(BaseStrategy):
 
         if conditions >= 2:
             conf = min(0.4 + (conditions * 0.15), 1.0)
+            
+            # 동점자 방지를 위한 RSI 과매도 미세가중 (0.00 ~ 0.09) - 낮을수록 보너스
+            current_entry = entry_market_data.iloc[-1]
+            rsi_val = float(current_entry.get("rsi_14", 50))
+            rsi_bonus = min(max(100 - rsi_val, 1), 99) / 1000.0
+            final_conf = min(conf + rsi_bonus, 1.0)
+
             return Signal(
                 SignalType.BUY,
                 ticker,
                 " | ".join(reasons),
                 conf * self.params["position_size_ratio"],
-                conf,
+                final_conf,
             )
 
         return Signal(SignalType.HOLD, ticker, f"진입대기 (조건부족)", 0, 0.0)

@@ -75,7 +75,7 @@ class BreakoutStrategy(BaseStrategy):
 
         if is_held:
             ma20 = float(current.get("ma_20", price))
-            
+
             # RSI 초강력 과열 (밴드워킹 중 조기 청산 방지 위해 상향)
             if rsi > self.params["exit"].get("rsi_threshold", 88):
                 return Signal(
@@ -85,7 +85,7 @@ class BreakoutStrategy(BaseStrategy):
                     1.0,
                     1.0,
                 )
-                
+
             # 상승장 중 단기 지지선 일시 이탈은 버티고, 15분 MA20 생명선 이탈 시 전량 청산
             if price < ma20:
                 return Signal(
@@ -154,12 +154,18 @@ class BreakoutStrategy(BaseStrategy):
             size_ratio = self.params["position_size_ratio"]
             conf = min(strength, 1.0)
 
+            # 동점자 방지를 위한 RSI 모멘텀 미세가중 (0.00 ~ 0.09)
+            current_entry = entry_market_data.iloc[-1]
+            rsi_val = float(current_entry.get("rsi_14", 50))
+            rsi_bonus = min(max(rsi_val, 0), 99) / 1000.0
+            final_conf = min(0.7 + rsi_bonus, 1.0)
+
             return Signal(
                 SignalType.BUY,
                 ticker,
                 " | ".join(reasons),
                 strength * size_ratio,
-                conf,
+                final_conf,
             )
 
         return Signal(

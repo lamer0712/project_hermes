@@ -59,12 +59,16 @@ class PanicStrategy(BaseStrategy):
         )
 
         if rebound and rsi < 35:
+            # 동점자 방지를 위한 RSI 과매도 미세가중 (0.00 ~ 0.09) - 낮을수록 보너스
+            rsi_bonus = min(max(100 - rsi, 1), 99) / 1000.0
+            final_conf = min(0.9 + rsi_bonus, 1.0)
+
             return Signal(
                 SignalType.BUY,
                 ticker,
                 "극단적 투매 반등 (RSI 침체)",
                 self.params["position_size_ratio"],
-                0.9,
+                final_conf,
             )
 
         return Signal(SignalType.HOLD, ticker, "대기 (투매 관망)", 0, 0.0)

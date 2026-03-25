@@ -147,13 +147,17 @@ class PullbackTrendStrategy(BaseStrategy):
         if setup_ok and strength >= 0.5:
 
             size_ratio = self.params["position_size_ratio"]
+            
+            # 동점자 방지를 위한 RSI 과매도 미세가중 (0.00 ~ 0.09) - 낮을수록 보너스 
+            rsi_bonus = min(max(100 - rsi_entry, 1), 99) / 1000.0
+            final_conf = min(strength + rsi_bonus, 1.0)
 
             return Signal(
                 SignalType.BUY,
                 ticker,
                 " | ".join(reasons),
                 strength * size_ratio,
-                strength,
+                final_conf,
             )
 
         strong_breakout = (
@@ -166,12 +170,13 @@ class PullbackTrendStrategy(BaseStrategy):
 
         if strong_breakout:
             size_ratio = self.params["position_size_ratio"]
+            rsi_bonus = min(max(rsi_entry, 1), 99) / 1000.0
             return Signal(
                 SignalType.BUY,
                 ticker,
                 "강한 돌파 (Strong Breakout)",
                 0.7 * size_ratio,
-                0.8,
+                min(0.8 + rsi_bonus, 1.0),
             )
 
         return Signal(

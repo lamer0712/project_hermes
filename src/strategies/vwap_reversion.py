@@ -64,7 +64,9 @@ class VWAPReversionStrategy(BaseStrategy):
 
             if vwap_touch or rsi_overbought:
                 reason = "VWAP선 도달" if vwap_touch else f"RSI 1차회복({rsi:.0f})"
-                return Signal(SignalType.SELL, ticker, f"[익절/손절] {reason}", 1.0, 1.0)
+                return Signal(
+                    SignalType.SELL, ticker, f"[익절/손절] {reason}", 1.0, 1.0
+                )
 
             return Signal(
                 SignalType.HOLD,
@@ -103,7 +105,9 @@ class VWAPReversionStrategy(BaseStrategy):
         ):
             is_fake_dip, reason = self.is_fake_dip(df)
             if is_fake_dip:
-                return Signal(SignalType.HOLD, ticker, f"대기 (가짜 눌림목: {reason})", 0, 0.0)
+                return Signal(
+                    SignalType.HOLD, ticker, f"대기 (가짜 눌림목: {reason})", 0, 0.0
+                )
             # 진입 2. RSI 과매도 구간
             if (
                 rsi < self.params["entry"]["rsi_threshold"]  # 38
@@ -111,12 +115,16 @@ class VWAPReversionStrategy(BaseStrategy):
             ):
                 strength = score * self.params["position_size_ratio"]
 
+                # 동점자 방지를 위한 RSI 과매도 미세가중 (0.00 ~ 0.09) - 낮을수록 보너스
+                rsi_bonus = min(max(100 - rsi, 1), 99) / 1000.0
+                final_conf = min(score + rsi_bonus, 1.0)
+
                 return Signal(
                     SignalType.BUY,
                     ticker,
                     f"VWAP 이격({distance_to_vwap*100:.1f}%) & RSI침체({rsi:.0f})",
                     strength,
-                    min(score, 1.0),
+                    final_conf,
                 )
 
         return Signal(

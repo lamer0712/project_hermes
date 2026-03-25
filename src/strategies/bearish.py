@@ -79,12 +79,16 @@ class BearishStrategy(BaseStrategy):
         trend_filter = price > ma20 * self.params["entry"]["trend_filter"]
 
         if rebound and volume_ok and trend_filter:
+            # 동점자 방지를 위한 RSI 과매도 미세가중 (0.00 ~ 0.09) - 낮을수록 보너스
+            rsi_bonus = min(max(100 - rsi, 1), 99) / 1000.0
+            final_conf = min(0.8 + rsi_bonus, 1.0)
+
             return Signal(
                 SignalType.BUY,
                 ticker,
                 "단기 하락 과대 (기술적 반등)",
                 self.params["position_size_ratio"],
-                0.8,
+                final_conf,
             )
 
         return Signal(SignalType.HOLD, ticker, "대기 (하락장 관망)", 0, 0.0)
