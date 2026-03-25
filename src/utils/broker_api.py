@@ -7,9 +7,10 @@ from urllib.parse import urlencode
 from src.utils.logger import logger
 from src.utils.market_data import UpbitMarketData
 from decimal import Decimal, ROUND_HALF_UP
+from src.interfaces.broker import BaseBroker
 
 
-class UpbitBroker:
+class UpbitBroker(BaseBroker):
     """Upbit API를 통해 실제 매수 및 매도 주문을 넣는 클래스"""
 
     BASE_URL = "https://api.upbit.com/v1"
@@ -54,9 +55,9 @@ class UpbitBroker:
         """UpbitMarketData의 regime 판독 로직을 래핑하여 제공합니다."""
         return UpbitMarketData.regime_detect(ticker, df)
 
-    def btc_regime(self) -> str:
+    def market_regime(self) -> str:
         """UpbitMarketData의 regime 판독 로직을 래핑하여 제공합니다."""
-        return UpbitMarketData.btc_regime()
+        return UpbitMarketData.market_regime()
 
     # ==========================================
     # 기존 Broker 고유 영역 (매매 로직 등)

@@ -92,11 +92,11 @@ def execute_trading_cycle(manager: ManagerAgent):
         logger.error("[System] Failed to fetch market data from Upbit. Skipping cycle.")
         return
 
-    btc_regime = broker.btc_regime()
-    logger.info(f"[Market Indicators] BTC regime: {btc_regime}")
+    market_regime = broker.market_regime()
+    logger.info(f"[Market Indicators] Market regime: {market_regime}")
 
     # 2. Manager evalutes market
-    manager.execute_cycle(setup_market_data, entry_market_data, btc_regime)
+    manager.execute_cycle(setup_market_data, entry_market_data, market_regime)
 
     logger.info("--- [System] High Frequency Loop Completed ---")
 
