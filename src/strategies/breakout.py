@@ -88,10 +88,12 @@ class BreakoutStrategy(BaseStrategy):
 
             # 상승장 중 단기 지지선 일시 이탈은 버티고, 15분 MA20 생명선 이탈 시 전량 청산
             if price < ma20:
+                avg_price = holdings[ticker].get("avg_price", 0)
+                tag = "[익절]" if price > avg_price else "[손절]"
                 return Signal(
                     SignalType.SELL,
                     ticker,
-                    f"[익절/손절] 생명선(MA20) 이탈",
+                    f"{tag} 생명선(MA20) 이탈",
                     1.0,
                     1.0,
                 )
