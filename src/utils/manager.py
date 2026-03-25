@@ -108,7 +108,7 @@ class ManagerAgent:
                     risk_signal_str = risk_signal.__str__()
                     log = f"⚡[Risk Manager]\n{risk_signal_str}"
                     logger.warning(log)
-                    self.notifier.send_message(log)
+                    # self.notifier.send_message(log)
                     self.execution_manager.execute_sell(
                         self.name, ticker, current_price, risk_signal
                     )
@@ -356,7 +356,7 @@ class ManagerAgent:
             risk_signal_str = risk_signal.__str__()
             log = f"⚡[Realtime Risk Hook]\n{risk_signal_str}"
             logger.warning(log)
-            self.notifier.send_message(log)
+            # self.notifier.send_message(log)
             self.execution_manager.execute_sell(
                 self.name, ticker, current_price, risk_signal
             )

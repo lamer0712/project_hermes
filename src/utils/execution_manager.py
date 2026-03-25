@@ -167,12 +167,12 @@ class ExecutionManager:
 
             # 매도 잔량이 매수 잔량의 0.7배 미만이면 가짜 돌파 혐의
             if total_ask < total_bid * 0.7:
-                # logger.warning(
-                #     f"🚫 [Orderbook Filter] {ticker} 얇은 매도 잔고(ask: {total_ask:.2f} < bid: {total_bid:.2f}*0.7). 진입 기각."
-                # )
-                self.notifier.send_message(
+                logger.warning(
                     f"🚫 [Orderbook Filter] {ticker} 얇은 매도 잔고(ask: {total_ask:.2f} < bid: {total_bid:.2f}*0.7). 진입 기각."
                 )
+                # self.notifier.send_message(
+                #     f"🚫 [Orderbook Filter] {ticker} 얇은 매도 잔고(ask: {total_ask:.2f} < bid: {total_bid:.2f}*0.7). 진입 기각."
+                # )
                 return False
 
         stop_loss_pct = risk_manager_params.get("stop_loss_pct", -5.0)

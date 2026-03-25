@@ -263,6 +263,8 @@ class PortfolioManager:
         sell_revenue_net = sell_revenue_gross - paid_fee
 
         avg_price = holdings[ticker]["avg_price"]
+        max_price = max(holdings[ticker].get("max_price", avg_price), avg_price)
+
         profit = sell_revenue_net - (avg_price * volume)
         profit_ratio = (profit / (avg_price * volume)) * 100
 
@@ -295,7 +297,7 @@ class PortfolioManager:
         )
         self.export_portfolio_report(agent_name)
         profit_emoji = "⏫" if profit > 0 else "⏬"
-        msg = f"{profit_emoji} 매도: {ticker} 거래수량: {volume:.3f}, 단가: {price:,.0f}, 거래금액: {sell_revenue_gross:,.0f}, 수수료: {paid_fee:,.2f}, 정산금액: {sell_revenue_net:,.0f}, 손익: {profit:+,.0f}({profit_ratio:+.2f}%)"
+        msg = f"{profit_emoji} 매도: {ticker} 거래수량: {volume:.3f}, 단가: {price:,.0f}, 거래금액: {sell_revenue_gross:,.0f}, 수수료: {paid_fee:,.2f}, 정산금액: {sell_revenue_net:,.0f}, 손익: {profit:+,.0f}({profit_ratio:+.2f}%), 고가: {max_price:,.0f}"
         logger.info(msg)
         self.notifier.send_message(msg)
         return True
