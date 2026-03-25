@@ -2,6 +2,7 @@ import time
 from typing import Optional
 from src.utils.logger import logger
 
+
 class ExecutionManager:
     """
     ManagerAgent에서 분리된 주문 실행 및 추적 담당자 (비동기/논블로킹 처리).
@@ -30,11 +31,13 @@ class ExecutionManager:
         completed_uuids = []
         for uuid_str, order_data in list(self.pending_orders.items()):
             order_info = self.broker.get_order(uuid_str)
-            
+
             if "error" in order_info:
-                logger.error(f"[ExecutionManager] 주문 조회 실패 ({uuid_str}): {order_info['error']}")
+                logger.error(
+                    f"[ExecutionManager] 주문 조회 실패 ({uuid_str}): {order_info['error']}"
+                )
                 continue
-                
+
             state = order_info.get("state")
             if state in ("done", "cancel"):
                 completed_uuids.append((uuid_str, order_info, order_data))
@@ -45,7 +48,7 @@ class ExecutionManager:
             order_type = order_data["type"]
             agent_name = order_data["agent_name"]
             ticker = order_data["ticker"]
-            
+
             if state == "done":
                 try:
                     executed_volume = float(order_info.get("executed_volume", 0))
@@ -55,7 +58,9 @@ class ExecutionManager:
                 except Exception as e:
                     logger.error(f"[ExecutionManager] 체결 내역 파싱 오류: {e}")
                     executed_volume = order_data.get("volume", 0)
-                    executed_funds = executed_volume * order_data.get("current_price", 0)
+                    executed_funds = executed_volume * order_data.get(
+                        "current_price", 0
+                    )
                     paid_fee = 0.0
 
                 current_price = order_data.get("current_price", 0)
@@ -78,7 +83,9 @@ class ExecutionManager:
                                 agent_name, ticker, atr_14=atr
                             )
                     elif order_type == "sell":
-                        target_volume_to_deduct = order_data.get("pm_tracked_volume", executed_volume)
+                        target_volume_to_deduct = order_data.get(
+                            "pm_tracked_volume", executed_volume
+                        )
                         self.portfolio_manager.record_sell(
                             agent_name=agent_name,
                             ticker=ticker,
@@ -89,8 +96,10 @@ class ExecutionManager:
                         )
 
             elif state == "cancel":
-                logger.warning(f"[ExecutionManager] 주문 취소됨: {ticker} ({order_type})")
-            
+                logger.warning(
+                    f"[ExecutionManager] 주문 취소됨: {ticker} ({order_type})"
+                )
+
             # 처리 완료된 주문은 딕셔너리에서 제거
             if uuid_str in self.pending_orders:
                 del self.pending_orders[uuid_str]
@@ -115,7 +124,7 @@ class ExecutionManager:
             portfolio_value = self.portfolio_manager.get_total_value(agent_name)
 
             target_risk_pct = 0.02
-            trade_risk_pct = 0.05 
+            trade_risk_pct = 0.05
 
             if atr > 0:
                 atr_pct = atr / current_price
@@ -158,10 +167,12 @@ class ExecutionManager:
 
             # 매도 잔량이 매수 잔량의 0.7배 미만이면 가짜 돌파 혐의
             if total_ask < total_bid * 0.7:
-                logger.warning(
+                # logger.warning(
+                #     f"🚫 [Orderbook Filter] {ticker} 얇은 매도 잔고(ask: {total_ask:.2f} < bid: {total_bid:.2f}*0.7). 진입 기각."
+                # )
+                self.notifier.send_message(
                     f"🚫 [Orderbook Filter] {ticker} 얇은 매도 잔고(ask: {total_ask:.2f} < bid: {total_bid:.2f}*0.7). 진입 기각."
                 )
-                self.notifier.send_message(f"🚫 [Orderbook Filter] {ticker} 얇은 매도 잔고(ask: {total_ask:.2f} < bid: {total_bid:.2f}*0.7). 진입 기각.")
                 return False
 
         stop_loss_pct = risk_manager_params.get("stop_loss_pct", -5.0)
@@ -190,10 +201,10 @@ class ExecutionManager:
                     "current_price": current_price,
                     "atr": atr,
                     "strategy_name": strategy_name,
-                    "volume": order_amount / current_price # fallback obj
+                    "volume": order_amount / current_price,  # fallback obj
                 }
                 return True
-        
+
         return False
 
     def execute_sell(
@@ -207,7 +218,9 @@ class ExecutionManager:
         if self.portfolio_manager:
             holdings = self.portfolio_manager.get_holdings(agent_name)
             if ticker not in holdings or holdings[ticker]["volume"] <= 0:
-                logger.info(f"[ExecutionManager] {ticker} 매도 시그널이나 보유 수량 없음. 생략.")
+                logger.info(
+                    f"[ExecutionManager] {ticker} 매도 시그널이나 보유 수량 없음. 생략."
+                )
                 return
             held_volume = holdings[ticker]["volume"]
         else:
@@ -234,7 +247,9 @@ class ExecutionManager:
         estimated_value = sell_volume * current_price
 
         if estimated_value < self.MIN_ORDER_AMOUNT:
-            logger.warning(f"[ExecutionManager] 매도 예상액({estimated_value:,.0f} KRW) 미달. 매도 불가.")
+            logger.warning(
+                f"[ExecutionManager] 매도 예상액({estimated_value:,.0f} KRW) 미달. 매도 불가."
+            )
             return
 
         # 실제 잔고 확인 및 동기화 무결성 체크
@@ -250,7 +265,9 @@ class ExecutionManager:
             logger.error(f"[ExecutionManager] 실제 잔고 조회 실패: {e}")
 
         if actual_balance <= 0.00000001:
-            logger.warning(f"[ExecutionManager] {ticker} 실제 Upbit 잔고가 거의 없음 → 매도 취소")
+            logger.warning(
+                f"[ExecutionManager] {ticker} 실제 Upbit 잔고가 거의 없음 → 매도 취소"
+            )
             # 매도할 잔고가 없는데 PM에만 남은 경우, 차기 synchronize_balances 에서 정리하도록 위임
             return
 
@@ -279,5 +296,5 @@ class ExecutionManager:
                     "ticker": ticker,
                     "current_price": current_price,
                     "pm_tracked_volume": pm_tracked_volume,
-                    "volume": sell_volume
+                    "volume": sell_volume,
                 }
