@@ -583,6 +583,19 @@
             return p.toFixed(4);
         }
 
+        function formatKST(isoStr, formatType = "full") {
+            const d = new Date(isoStr);
+            if (isNaN(d.getTime())) return isoStr;
+            const opts = { timeZone: "Asia/Seoul", hour12: false };
+            if (formatType === "full") {
+                opts.year = "numeric"; opts.month = "2-digit"; opts.day = "2-digit";
+                opts.hour = "2-digit"; opts.minute = "2-digit";
+            } else if (formatType === "time") {
+                opts.hour = "2-digit"; opts.minute = "2-digit";
+            }
+            return new Intl.DateTimeFormat("ko-KR", opts).format(d);
+        }
+
         // ─────────────────────────────────────────────
         // Chart Initialization
         // ─────────────────────────────────────────────
@@ -603,11 +616,29 @@
                     vertLine: { color: "rgba(88,166,255,0.3)", width: 1, style: 2 },
                     horzLine: { color: "rgba(88,166,255,0.3)", width: 1, style: 2 },
                 },
+                localization: {
+                    locale: 'ko-KR',
+                    timeFormatter: time => formatKST(new Date(time * 1000).toISOString(), "full")
+                },
                 rightPriceScale: { borderColor: "#30363d" },
                 timeScale: {
                     borderColor: "#30363d",
                     timeVisible: true,
                     secondsVisible: false,
+                    tickMarkFormatter: (time, tickMarkType, locale) => {
+                        const d = new Date(time * 1000);
+                        const opts = { timeZone: "Asia/Seoul", hour12: false };
+                        if (tickMarkType === 0 /* Year */) {
+                            opts.year = "numeric";
+                        } else if (tickMarkType === 1 /* Month */) {
+                            opts.month = "short";
+                        } else if (tickMarkType === 2 /* DayOfMonth */) {
+                            opts.month = "short"; opts.day = "numeric";
+                        } else {
+                            opts.hour = "2-digit"; opts.minute = "2-digit";
+                        }
+                        return new Intl.DateTimeFormat("ko-KR", opts).format(d);
+                    }
                 },
                 handleScale: { axisPressedMouseMove: { time: true, price: true } },
                 handleScroll: { vertTouchDrag: false },
@@ -642,11 +673,24 @@
                     vertLines: { color: "rgba(48,54,61,0.3)" },
                     horzLines: { color: "rgba(48,54,61,0.3)" },
                 },
+                localization: {
+                    locale: 'ko-KR',
+                    timeFormatter: time => formatKST(new Date(time * 1000).toISOString(), "full")
+                },
                 rightPriceScale: { borderColor: "#30363d" },
                 timeScale: {
                     borderColor: "#30363d",
                     timeVisible: true,
                     visible: false,
+                    tickMarkFormatter: (time, tickMarkType, locale) => {
+                        const d = new Date(time * 1000);
+                        const opts = { timeZone: "Asia/Seoul", hour12: false };
+                        if (tickMarkType === 0) opts.year = "numeric";
+                        else if (tickMarkType === 1) opts.month = "short";
+                        else if (tickMarkType === 2) { opts.month = "short"; opts.day = "numeric"; }
+                        else { opts.hour = "2-digit"; opts.minute = "2-digit"; }
+                        return new Intl.DateTimeFormat("ko-KR", opts).format(d);
+                    }
                 },
                 crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
                 handleScale: false,
@@ -755,6 +799,7 @@
                 low: d.low,
                 close: d.close,
             }));
+            window.chartCandles = candles;
             candleSeries.setData(candles);
 
             // Volume
@@ -877,7 +922,7 @@
                 <div class="trade-side ${t.side}">${t.side.toUpperCase()}</div>
                 <div class="trade-info">
                     <div class="trade-price">₩${formatPrice(t.price)}</div>
-                    <div class="trade-time">${t.timestamp?.substring(5, 16) || ''}</div>
+                    <div class="trade-time">${formatKST(t.timestamp.replace(" ", "T") + "Z", "time")}</div>
                 </div>
                 ${profitHtml}
             </div>
@@ -886,15 +931,21 @@
 
             // Chart markers
             if (activeIndicators.has("trades")) {
-                const markers = trades.map(t => ({
-                    time: toUnixTimestamp(t.timestamp.replace(" ", "T")),
-                    position: t.side === "buy" ? "belowBar" : "aboveBar",
-                    color: t.side === "buy" ? "#3fb950" : "#f85149",
-                    shape: t.side === "buy" ? "arrowUp" : "arrowDown",
-                    text: t.side === "buy"
-                        ? `BUY ₩${formatPrice(t.price)}`
-                        : `SELL ₩${formatPrice(t.price)}${t.profit_rate != null ? ` (${t.profit_rate >= 0 ? '+' : ''}${t.profit_rate}%)` : ''}`,
-                })).sort((a, b) => a.time - b.time);
+                const markers = trades.map(t => {
+                    // For the marker, we want the UNIX timestamp exactly like in the candles.
+                    // SQLite trade timestamps are generated locally; if UTC or naive KST,
+                    // we append +09:00 locally to parse it uniquely, or just "Z" if it's already UTC.
+                    // Wait, DB has naive KST timestamps. So we append +09:00 here.
+                    return {
+                        time: toUnixTimestamp(t.timestamp.replace(" ", "T") + "+09:00"),
+                        position: t.side === "buy" ? "belowBar" : "aboveBar",
+                        color: t.side === "buy" ? "#3fb950" : "#f85149",
+                        shape: t.side === "buy" ? "arrowUp" : "arrowDown",
+                        text: t.side === "buy"
+                            ? `BUY ₩${formatPrice(t.price)}`
+                            : `SELL ₩${formatPrice(t.price)}${t.profit_rate != null ? ` (${t.profit_rate >= 0 ? '+' : ''}${t.profit_rate}%)` : ''}`,
+                    };
+                }).sort((a, b) => a.time - b.time);
                 candleSeries.setMarkers(markers);
             } else {
                 candleSeries.setMarkers([]);
@@ -953,15 +1004,38 @@
                 regimeBoxElements.push(box);
 
                 function updatePos() {
-                    const x1 = timeScale.timeToCoordinate(startTime);
-                    const x2 = timeScale.timeToCoordinate(endTime);
+                    let x1 = timeScale.timeToCoordinate(startTime);
+                    let x2 = timeScale.timeToCoordinate(endTime);
+                    
+                    const candles = window.chartCandles || [];
+                    if (candles.length > 0) {
+                        if (x1 === null && startTime <= candles[0].time) x1 = timeScale.timeToCoordinate(candles[0].time) - 1000;
+                        if (x2 === null && endTime >= candles[candles.length - 1].time) x2 = timeScale.timeToCoordinate(candles[candles.length - 1].time) + 1000;
+                    }
+
                     if (x1 === null || x2 === null) {
                         box.style.display = "none";
                         return;
                     }
+                    
+                    // Box should cover full candles horizontally
+                    let barSpacing = 6; // default bar spacing fallback
+                    const logical1 = timeScale.coordinateToLogical(x1);
+                    if (logical1 !== null) {
+                        const nx = timeScale.logicalToCoordinate(logical1 + 1);
+                        if (nx !== null) barSpacing = nx - x1;
+                    }
+
                     box.style.display = "block";
-                    box.style.left = Math.min(x1, x2) + "px";
-                    box.style.width = Math.abs(x2 - x1) + "px";
+                    let leftEdge = Math.min(x1, x2) - barSpacing / 2;
+                    let rightEdge = Math.max(x1, x2) + barSpacing / 2;
+                    const maxRight = timeScale.width();
+
+                    leftEdge = Math.max(0, leftEdge);
+                    rightEdge = Math.min(maxRight, rightEdge);
+
+                    box.style.left = leftEdge + "px";
+                    box.style.width = Math.max(0, rightEdge - leftEdge) + "px";
                 }
                 updatePos();
                 timeScale.subscribeVisibleTimeRangeChange(updatePos);
