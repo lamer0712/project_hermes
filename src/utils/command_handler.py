@@ -197,9 +197,9 @@ class CommandQueueHandler:
             msg += f"\n📦 **보유 포지션 상세 현황**\n"
             msg += f"• 매수 전략: {buy_strategy}\n"
             msg += f"• 평단 수익률: {profit_pct:+.2f}% (평단가: {avg_price:,.2f}원)\n"
-            msg += f"• 목표 익절가: +{take_profit_pct:.1f}%({avg_price * (1 + take_profit_pct / 100):,.2f}원)"
+            msg += f"• 목표 익절가: +{take_profit_pct:.1f}% ({avg_price * (1 + take_profit_pct / 100):,.2f}원)"
             msg += f" (달성 내역: {tp_hit})\n" if tp_hit else "\n"
-            msg += f"• 동적 손절가: {stop_loss_pct:.1f}%({avg_price * (1 + stop_loss_pct / 100):,.2f}원)"
+            msg += f"• 동적 손절가: {stop_loss_pct:.1f}% ({avg_price * (1 + stop_loss_pct / 100):,.2f}원)"
             msg += f" (발동 내역: {sl_hit})\n" if sl_hit else "\n"
 
         self.notifier.send_message(msg)
