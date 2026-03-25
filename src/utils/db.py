@@ -62,10 +62,16 @@ class DatabaseManager:
                     avg_price REAL DEFAULT 0,
                     max_price REAL DEFAULT 0,
                     sl_levels_hit TEXT DEFAULT '[]',
+                    strategy TEXT DEFAULT 'Unknown',
                     PRIMARY KEY (agent_name, ticker),
                     FOREIGN KEY (agent_name) REFERENCES portfolios(agent_name) ON DELETE CASCADE
                 )
             ''')
+            
+            cursor.execute("PRAGMA table_info(holdings)")
+            holdings_cols = [row[1] for row in cursor.fetchall()]
+            if 'strategy' not in holdings_cols:
+                cursor.execute("ALTER TABLE holdings ADD COLUMN strategy TEXT DEFAULT 'Unknown'")
             
             # 거래 기록 보관 (이력)
             cursor.execute('''
@@ -78,9 +84,15 @@ class DatabaseManager:
                     price REAL,
                     executed_funds REAL,
                     paid_fee REAL,
+                    strategy TEXT DEFAULT 'Unknown',
                     timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             ''')
+            
+            cursor.execute("PRAGMA table_info(trade_history)")
+            trade_cols = [row[1] for row in cursor.fetchall()]
+            if 'strategy' not in trade_cols:
+                cursor.execute("ALTER TABLE trade_history ADD COLUMN strategy TEXT DEFAULT 'Unknown'")
 
     def save_portfolio(self, agent_name: str, data: dict):
         """포트폴리오 정보(현금, 중단 여부 등)를 DB에 저장/업데이트"""
@@ -130,20 +142,22 @@ class DatabaseManager:
                     cursor.execute('DELETE FROM holdings WHERE agent_name=? AND ticker=?', (agent_name, ticker))
                 else:
                     cursor.execute('''
-                        INSERT INTO holdings (agent_name, ticker, volume, avg_price, max_price, sl_levels_hit)
-                        VALUES (?, ?, ?, ?, ?, ?)
+                        INSERT INTO holdings (agent_name, ticker, volume, avg_price, max_price, sl_levels_hit, strategy)
+                        VALUES (?, ?, ?, ?, ?, ?, ?)
                         ON CONFLICT(agent_name, ticker) DO UPDATE SET
                             volume=excluded.volume,
                             avg_price=excluded.avg_price,
                             max_price=excluded.max_price,
-                            sl_levels_hit=excluded.sl_levels_hit
+                            sl_levels_hit=excluded.sl_levels_hit,
+                            strategy=excluded.strategy
                     ''', (
                         agent_name,
                         ticker,
                         info.get("volume", 0),
                         info.get("avg_price", 0),
                         info.get("max_price", 0),
-                        json.dumps(info.get("sl_levels_hit", []))
+                        json.dumps(info.get("sl_levels_hit", [])),
+                        info.get("strategy", "Unknown")
                     ))
 
     def load_portfolio_state(self) -> dict:
@@ -175,7 +189,8 @@ class DatabaseManager:
                         "volume": row['volume'],
                         "avg_price": row['avg_price'],
                         "max_price": row['max_price'],
-                        "sl_levels_hit": json.loads(row['sl_levels_hit'])
+                        "sl_levels_hit": json.loads(row['sl_levels_hit']),
+                        "strategy": row['strategy'] if 'strategy' in row.keys() else "Unknown"
                     }
         return state
 
@@ -187,14 +202,14 @@ class DatabaseManager:
             cursor.execute('DELETE FROM portfolios WHERE agent_name = ?', (agent_name,))
             logger.info(f"[DB] {agent_name} 포트폴리오 및 대장 삭제 완료")
 
-    def record_trade(self, agent_name: str, ticker: str, side: str, volume: float, price: float, executed_funds: float, paid_fee: float):
+    def record_trade(self, agent_name: str, ticker: str, side: str, volume: float, price: float, executed_funds: float, paid_fee: float, strategy: str = "Unknown"):
         """새로운 거래 기록을 추가"""
         with self.get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute('''
-                INSERT INTO trade_history (agent_name, ticker, side, volume, price, executed_funds, paid_fee)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-            ''', (agent_name, ticker, side, volume, price, executed_funds, paid_fee))
+                INSERT INTO trade_history (agent_name, ticker, side, volume, price, executed_funds, paid_fee, strategy)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (agent_name, ticker, side, volume, price, executed_funds, paid_fee, strategy))
 
     def clear_trade_history(self):
         """trade_history 테이블의 모든 기록을 삭제"""
