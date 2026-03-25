@@ -43,12 +43,12 @@ class PanicStrategy(BaseStrategy):
         # =========================
         if is_held:
             if price <= entry_price * self.params["exit"]["stop_loss"]:
-                return Signal(SignalType.SELL, ticker, "Panic stop", 1.0)
+                return Signal(SignalType.SELL, ticker, "[손절] 패닉스탑", 1.0, 1.0)
 
             if price > entry_price * self.params["exit"]["profit_target"]:
-                return Signal(SignalType.SELL, ticker, "Quick bounce exit", 1.0)
+                return Signal(SignalType.SELL, ticker, "[익절] 기술적 반등 성공", 1.0, 1.0)
 
-            return Signal(SignalType.HOLD, ticker, "Very risky hold", 0)
+            return Signal(SignalType.HOLD, ticker, "홀딩 (반등 중)", 0, 0.0)
 
         # =========================
         # ENTRY → 극단 상황만
@@ -59,11 +59,16 @@ class PanicStrategy(BaseStrategy):
         )
 
         if rebound and rsi < 35:
+            # 동점자 방지를 위한 RSI 과매도 미세가중 (0.00 ~ 0.09) - 낮을수록 보너스
+            rsi_bonus = min(max(100 - rsi, 1), 99) / 1000.0
+            final_conf = min(0.9 + rsi_bonus, 1.0)
+
             return Signal(
                 SignalType.BUY,
                 ticker,
-                "Extreme oversold bounce",
+                "극단적 투매 반등 (RSI 침체)",
                 self.params["position_size_ratio"],
+                final_conf,
             )
 
-        return Signal(SignalType.HOLD, ticker, "No trade (panic)", 0)
+        return Signal(SignalType.HOLD, ticker, "대기 (투매 관망)", 0, 0.0)

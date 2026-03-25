@@ -53,7 +53,7 @@ class MeanReversionStrategy(BaseStrategy):
         is_held = ticker in holdings and holdings[ticker]["volume"] > 0
 
         if entry_market_data is None or len(entry_market_data) < 20:
-            return Signal(SignalType.HOLD, ticker, "데이터 부족", 0.0)
+            return Signal(SignalType.HOLD, ticker, "데이터 부족", 0.0, 0.0)
 
         current = entry_market_data.iloc[-1]
 
@@ -76,11 +76,11 @@ class MeanReversionStrategy(BaseStrategy):
             reasons = ["Exit"]
 
             if rsi >= exit_cfg["rsi_threshold"]:
-                reasons.append(f"RSI 회복 {rsi:.1f}")
+                reasons.append(f"RSI회복({rsi:.0f})")
                 strength += 0.5
 
             if bb_position >= exit_cfg["bb_position_threshold"]:
-                reasons.append(f"BB midline {bb_position:.2f}")
+                reasons.append(f"BB중앙도달")
                 strength += 0.5
 
             if strength > 0:
@@ -89,9 +89,10 @@ class MeanReversionStrategy(BaseStrategy):
                     ticker,
                     " ".join(reasons),
                     strength,
+                    1.0,
                 )
 
-            return Signal(SignalType.HOLD, ticker, "보유 중, 추세 유지", 0)
+            return Signal(SignalType.HOLD, ticker, "홀딩 (추세 유지)", 0, 0.0)
 
         # ------------------------------
         # SETUP FILTER (1h)
@@ -110,7 +111,7 @@ class MeanReversionStrategy(BaseStrategy):
                 setup_rsi < setup_cfg["rsi_threshold"]
                 or setup_bb < setup_cfg["bb_position_threshold"]
             ):
-                return Signal(SignalType.HOLD, ticker, "Setup 미충족", 0)
+                return Signal(SignalType.HOLD, ticker, "대기 (Setup 미충족)", 0, 0.0)
 
         # ------------------------------
         # ENTRY
@@ -119,40 +120,49 @@ class MeanReversionStrategy(BaseStrategy):
 
         # 반등 확인
         if price <= prev_price:
-            return Signal(SignalType.HOLD, ticker, "하락 중", 0)
+            return Signal(SignalType.HOLD, ticker, "대기 (하락 진행중)", 0, 0.0)
 
         if self.is_downtrend(entry_market_data):
-            return Signal(SignalType.HOLD, ticker, "하락 추세", 0)
+            return Signal(SignalType.HOLD, ticker, "대기 (하락 추세)", 0, 0.0)
 
         is_fake_dip, reason = self.is_fake_dip(entry_market_data)
         if is_fake_dip:
-            return Signal(SignalType.HOLD, ticker, f"가짜 눌림목 ({reason})", 0)
+            return Signal(SignalType.HOLD, ticker, f"대기 (가짜 눌림목: {reason})", 0, 0.0)
 
         conditions = 0
         reasons = []
 
         if rsi < entry_cfg["rsi_threshold"]:
             conditions += 1
-            reasons.append(f"RSI {rsi:.1f}")
+            reasons.append(f"RSI침체")
 
         if bb_position < entry_cfg["bb_lower_threshold"]:
             conditions += 1
-            reasons.append(f"BB {bb_position:.2f}")
+            reasons.append(f"BB이탈")
 
         if volume > vol_ma * entry_cfg["volume_multiplier"]:
             conditions += 1
-            reasons.append("Volume")
+            reasons.append("투매거래량")
 
         if change_5 < entry_cfg["panic_drop_pct"]:
             conditions += 1
-            reasons.append(f"Drop {change_5:.2f}")
+            reasons.append(f"단기급락({change_5*100:.1f}%)")
 
         if conditions >= 2:
+            conf = min(0.4 + (conditions * 0.15), 1.0)
+            
+            # 동점자 방지를 위한 RSI 과매도 미세가중 (0.00 ~ 0.09) - 낮을수록 보너스
+            current_entry = entry_market_data.iloc[-1]
+            rsi_val = float(current_entry.get("rsi_14", 50))
+            rsi_bonus = min(max(100 - rsi_val, 1), 99) / 1000.0
+            final_conf = min(conf + rsi_bonus, 1.0)
+
             return Signal(
                 SignalType.BUY,
                 ticker,
                 " | ".join(reasons),
-                0.6 * self.params["position_size_ratio"],
+                conf * self.params["position_size_ratio"],
+                final_conf,
             )
 
-        return Signal(SignalType.HOLD, ticker, f"Entry 대기, reasons: {reasons}", 0)
+        return Signal(SignalType.HOLD, ticker, f"진입대기 (조건부족)", 0, 0.0)

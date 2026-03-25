@@ -41,14 +41,14 @@ class VWAPReversionStrategy(BaseStrategy):
 
         df = entry_market_data
         if len(df) < 5 or "vwap" not in df.columns:
-            return Signal(SignalType.HOLD, ticker, "데이터 부족(VWAP 없음)", 0)
+            return Signal(SignalType.HOLD, ticker, "데이터 부족(VWAP 없음)", 0, 0.0)
 
         current_price = df.close.iloc[-1]
         vwap = df.vwap.iloc[-1]
 
         # 0 나누기 방지
         if vwap <= 0:
-            return Signal(SignalType.HOLD, ticker, "VWAP < 0", 0)
+            return Signal(SignalType.HOLD, ticker, "VWAP < 0", 0, 0.0)
 
         rsi = df.rsi_14.iloc[-1]
         bb_lower = df.bb_lower.iloc[-1]
@@ -63,21 +63,24 @@ class VWAPReversionStrategy(BaseStrategy):
             rsi_overbought = rsi >= self.params["exit"]["rsi_threshold"]
 
             if vwap_touch or rsi_overbought:
-                reason = "VWAP Touch" if vwap_touch else f"RSI {rsi:.1f} Exit"
-                return Signal(SignalType.SELL, ticker, f"Exit: {reason}", 1.0)
+                reason = "VWAP선 도달" if vwap_touch else f"RSI 1차회복({rsi:.0f})"
+                return Signal(
+                    SignalType.SELL, ticker, f"[익절/손절] {reason}", 1.0, 1.0
+                )
 
             return Signal(
                 SignalType.HOLD,
                 ticker,
-                f"VWAP 회귀 대기 (Dist: {((current_price-vwap)/vwap)*100:.1f}%)",
+                f"홀딩 (VWAP회귀 대기 중, 이격: {((current_price-vwap)/vwap)*100:.1f}%)",
                 0,
+                0.0,
             )
 
         # =========================
         # ENTRY (15m)
         # =========================
         if self.is_downtrend(entry_market_data):
-            return Signal(SignalType.HOLD, ticker, "하락 추세", 0)
+            return Signal(SignalType.HOLD, ticker, "대기 (하락 추세)", 0, 0.0)
 
         distance_to_vwap = (current_price - vwap) / vwap
         distance = abs(distance_to_vwap)
@@ -102,7 +105,9 @@ class VWAPReversionStrategy(BaseStrategy):
         ):
             is_fake_dip, reason = self.is_fake_dip(df)
             if is_fake_dip:
-                return Signal(SignalType.HOLD, ticker, f"가짜 눌림목 ({reason})", 0)
+                return Signal(
+                    SignalType.HOLD, ticker, f"대기 (가짜 눌림목: {reason})", 0, 0.0
+                )
             # 진입 2. RSI 과매도 구간
             if (
                 rsi < self.params["entry"]["rsi_threshold"]  # 38
@@ -110,16 +115,22 @@ class VWAPReversionStrategy(BaseStrategy):
             ):
                 strength = score * self.params["position_size_ratio"]
 
+                # 동점자 방지를 위한 RSI 과매도 미세가중 (0.00 ~ 0.09) - 낮을수록 보너스
+                rsi_bonus = min(max(100 - rsi, 1), 99) / 1000.0
+                final_conf = min(score + rsi_bonus, 1.0)
+
                 return Signal(
                     SignalType.BUY,
                     ticker,
-                    f"VWAP Dip s:{score:.2f} (Dist: {distance_to_vwap*100:.1f}%, RSI: {rsi:.1f}, CP: {current_price:.2f}, BB_Low: {bb_lower*1.02:.2f})",
+                    f"VWAP 이격({distance_to_vwap*100:.1f}%) & RSI침체({rsi:.0f})",
                     strength,
+                    final_conf,
                 )
 
         return Signal(
             SignalType.HOLD,
             ticker,
-            f"대기 (Dist: {distance_to_vwap*100:.1f}%, score: {score:.2f})",
+            f"진입대기 (VWAP이격: {distance_to_vwap*100:.1f}%, 점수: {score:.1f})",
             0,
+            0.0,
         )

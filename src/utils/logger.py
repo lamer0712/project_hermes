@@ -18,8 +18,8 @@ class TelegramLoggingHandler(logging.Handler):
                 alert_msg = f"🚨 *System Error*\n```\n{msg}\n```"
                 self.notifier.send_message(alert_msg)
             elif record.levelno == logging.WARNING:
-                alert_msg = f"⚠️ *System Warning*\n{msg}"
-                self.notifier.send_message(alert_msg)
+                # alert_msg = f"⚠️ *System Warning*\n{msg}"
+                self.notifier.send_message(msg)
         except Exception:
             self.handleError(record)
 

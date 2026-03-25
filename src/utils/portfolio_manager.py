@@ -68,6 +68,7 @@ class PortfolioManager:
                             "total_cost": h["volume"] * h["avg_price"],
                             "max_price": h["max_price"],
                             "sl_levels_hit": h["sl_levels_hit"],
+                            "tp_levels_hit": h.get("tp_levels_hit", []),
                             "atr_14": h.get("atr_14", 0),
                             "strategy": h.get("strategy", "Unknown"),
                         }
@@ -195,6 +196,7 @@ class PortfolioManager:
                 "total_cost": new_total,
                 "max_price": existing.get("max_price", price),
                 "sl_levels_hit": existing.get("sl_levels_hit", []),
+                "tp_levels_hit": existing.get("tp_levels_hit", []),
                 "atr_14": existing.get("atr_14", 0),
                 "strategy": strategy,
             }
@@ -205,6 +207,7 @@ class PortfolioManager:
                 "total_cost": total_cost_excluding_fee,
                 "max_price": price,
                 "sl_levels_hit": [],
+                "tp_levels_hit": [],
                 "atr_14": 0,
                 "strategy": strategy,
             }
@@ -212,11 +215,18 @@ class PortfolioManager:
         portfolio["total_trades"] = portfolio.get("total_trades", 0) + 1
         self.save_state()
         self.db.record_trade(
-            agent_name, ticker, "buy", volume, price, executed_funds, paid_fee, strategy=strategy
+            agent_name,
+            ticker,
+            "buy",
+            volume,
+            price,
+            executed_funds,
+            paid_fee,
+            strategy=strategy,
         )
         self.export_portfolio_report(agent_name)
         logger.info(
-            f"[Manager] ✅ {agent_name} 매수 기록: {ticker} 거래수량: {volume:.6f}, 단가: {price:,.0f}, 거래금액: {total_cost_excluding_fee:,.0f}, 수수료: {paid_fee:,.2f}, 정산금액: {total_cost_including_fee:,.0f}, 잔여현금: {portfolio['cash']:,.0f})"
+            f"✅ 매수: {ticker} 거래수량: {volume:.6f}, 단가: {price:,.0f}, 거래금액: {total_cost_excluding_fee:,.0f}, 수수료: {paid_fee:,.2f}, 정산금액: {total_cost_including_fee:,.0f}, 잔여현금: {portfolio['cash']:,.0f})"
         )
         return True
 
@@ -253,6 +263,8 @@ class PortfolioManager:
         sell_revenue_net = sell_revenue_gross - paid_fee
 
         avg_price = holdings[ticker]["avg_price"]
+        max_price = max(holdings[ticker].get("max_price", avg_price), avg_price)
+
         profit = sell_revenue_net - (avg_price * volume)
         profit_ratio = (profit / (avg_price * volume)) * 100
 
@@ -274,11 +286,18 @@ class PortfolioManager:
 
         self.save_state()
         self.db.record_trade(
-            agent_name, ticker, "sell", volume, price, sell_revenue_gross, paid_fee, strategy=strategy
+            agent_name,
+            ticker,
+            "sell",
+            volume,
+            price,
+            sell_revenue_gross,
+            paid_fee,
+            strategy=strategy,
         )
         self.export_portfolio_report(agent_name)
         profit_emoji = "⏫" if profit > 0 else "⏬"
-        msg = f"{profit_emoji}{ticker} - 거래수량: {volume:.3f}, 단가: {price:,.0f}, 거래금액: {sell_revenue_gross:,.0f}, 수수료: {paid_fee:,.2f}, 정산금액: {sell_revenue_net:,.0f}, 손익: {profit:+,.0f}({profit_ratio:+.2f}%)"
+        msg = f"{profit_emoji} 매도: {ticker} 거래수량: {volume:.3f}, 단가: {price:,.0f}, 거래금액: {sell_revenue_gross:,.0f}, 수수료: {paid_fee:,.2f}, 정산금액: {sell_revenue_net:,.0f}, 손익: {profit:+,.0f}({profit_ratio:+.2f}%), 고가: {max_price:,.0f}"
         logger.info(msg)
         self.notifier.send_message(msg)
         return True
@@ -337,6 +356,7 @@ class PortfolioManager:
         ticker: str,
         max_price: float = None,
         hit_sl_level: float = None,
+        hit_tp_level: float = None,
         atr_14: float = None,
     ) -> bool:
         """
@@ -363,6 +383,13 @@ class PortfolioManager:
             if hit_sl_level not in sl_levels:
                 sl_levels.append(hit_sl_level)
                 holding["sl_levels_hit"] = sl_levels
+                modified = True
+
+        if hit_tp_level is not None:
+            tp_levels = holding.get("tp_levels_hit", [])
+            if hit_tp_level not in tp_levels:
+                tp_levels.append(hit_tp_level)
+                holding["tp_levels_hit"] = tp_levels
                 modified = True
 
         if atr_14 is not None:
@@ -563,11 +590,15 @@ class PortfolioManager:
                     data["sl_levels_hit"] = old_holdings[ticker].get(
                         "sl_levels_hit", []
                     )
+                    data["tp_levels_hit"] = old_holdings[ticker].get(
+                        "tp_levels_hit", []
+                    )
                     data["atr_14"] = old_holdings[ticker].get("atr_14", 0)
                     data["strategy"] = old_holdings[ticker].get("strategy", "Unknown")
                 else:
                     data["max_price"] = data["avg_price"]
                     data["sl_levels_hit"] = []
+                    data["tp_levels_hit"] = []
                     data["atr_14"] = 0
                     data["strategy"] = "Unknown"
 
