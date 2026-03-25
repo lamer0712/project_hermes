@@ -140,6 +140,7 @@ class ManagerAgent:
                     "signal_type": "HOLD",
                     "signal_reason": "N/A",
                     "signal_strength": 0,
+                    "signal_confidence": -1,
                     "current_price": current_price,
                 }
                 continue
