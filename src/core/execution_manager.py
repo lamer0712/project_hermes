@@ -49,12 +49,19 @@ class ExecutionManager:
             agent_name = order_data["agent_name"]
             ticker = order_data["ticker"]
 
-            if state == "done":
+            if state == "done" or (
+                state == "cancel" and float(order_info.get("executed_volume", 0)) > 0
+            ):
                 try:
                     executed_volume = float(order_info.get("executed_volume", 0))
                     trades = order_info.get("trades", [])
                     executed_funds = sum(float(t.get("funds", 0)) for t in trades)
                     paid_fee = float(order_info.get("paid_fee", 0))
+
+                    if state == "cancel":
+                        logger.info(
+                            f"[ExecutionManager] 주문 취소되었으나 부분 체결됨: {ticker} ({executed_volume} {order_type})"
+                        )
                 except Exception as e:
                     logger.error(f"[ExecutionManager] 체결 내역 파싱 오류: {e}")
                     executed_volume = order_data.get("volume", 0)
@@ -86,10 +93,14 @@ class ExecutionManager:
                         target_volume_to_deduct = order_data.get(
                             "pm_tracked_volume", executed_volume
                         )
+                        # 부분 체결인 경우, track 수량도 비율대로 조정 필요할 수 있으나
+                        # 여기서는 실제 체결된 만큼만 반영하거나, 취소된 나머지는 PM에 남겨둠.
+                        # Upbit SELL IOC의 경우, 체결안된건 그냥 취소되므로 PM에서도 차감 안하는게 맞음.
+                        # 단, record_sell은 '매도한 만큼'을 기록하는 것이므로 executed_volume이 맞음.
                         self.portfolio_manager.record_sell(
                             agent_name=agent_name,
                             ticker=ticker,
-                            volume=target_volume_to_deduct,
+                            volume=executed_volume,  # 실제 체결된 만큼만 기록
                             price=current_price,
                             executed_funds=executed_funds,
                             paid_fee=paid_fee,

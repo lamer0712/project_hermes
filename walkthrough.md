@@ -1,27 +1,32 @@
-# `src/` Directory Reorganization Walkthrough
+# 작업 완료 보고서: KRW-ATH 매도 주문 취소 문제 해결
 
-The `src/` directory has been successfully refactored from a flat `utils/`-heavy architecture into a more professional, domain-driven structure.
+`KRW-ATH` 매도 주문이 슬리피지 제한으로 인해 취소되었던 문제를 분석하고, 이를 방지하기 위한 개선 작업을 완료했습니다.
 
-## Changes Made
+## 변경 사항 요약
 
-### 1. New Directory Layout Created
-We created domain-specific folders to logically organize the modules:
-- **`core/`**: Holds the main trading logic and central managers ([manager.py](file:///Users/lamer/Project/stock/project_hermes/src/core/manager.py), [portfolio_manager.py](file:///Users/lamer/Project/stock/project_hermes/src/core/portfolio_manager.py), [execution_manager.py](file:///Users/lamer/Project/stock/project_hermes/src/core/execution_manager.py), [risk_manager.py](file:///Users/lamer/Project/stock/project_hermes/src/core/risk_manager.py)).
-- **`data/`**: Manages market data state, websocket connections, and database interactions ([market_data.py](file:///Users/lamer/Project/stock/project_hermes/src/data/market_data.py), [upbit_websocket.py](file:///Users/lamer/Project/stock/project_hermes/src/data/upbit_websocket.py), [db.py](file:///Users/lamer/Project/stock/project_hermes/src/data/db.py)).
-- **`broker/`**: Centralizes exchange API integrations, paving the way for the new KIS API integration alongside the current Upbit broker ([broker_api.py](file:///Users/lamer/Project/stock/project_hermes/src/utils/broker_api.py)).
-- **`ai/`**: Isolates intelligence and prompt configurations ([llm_client.py](file:///Users/lamer/Project/stock/project_hermes/src/ai/llm_client.py), [gemini_client.py](file:///Users/lamer/Project/stock/project_hermes/src/ai/gemini_client.py)).
-- **`communication/`**: Groups UI/UX interaction systems ([command_handler.py](file:///Users/lamer/Project/stock/project_hermes/src/utils/command_handler.py), [command_queue.py](file:///Users/lamer/Project/stock/project_hermes/src/utils/command_queue.py), [telegram_listener.py](file:///Users/lamer/Project/stock/project_hermes/src/interfaces/telegram_listener.py), [telegram_notifier.py](file:///Users/lamer/Project/stock/project_hermes/src/utils/telegram_notifier.py)).
-- **`utils/`**: Reduced to solely contain true independent utilities like [logger.py](file:///Users/lamer/Project/stock/project_hermes/src/utils/logger.py) and [markdown_io.py](file:///Users/lamer/Project/stock/project_hermes/src/utils/markdown_io.py).
+### 1. 슬리피지 허용 한도 상향 (1.0%)
+- **[broker_api.py](file:///Users/home/Project/project_hermes/src/broker/broker_api.py)**
+- 기본 슬리피지 허용치를 **0.5%에서 1.0%로 상향**했습니다.
+- 변동성이 큰 코인이나 호가가 얇은 종목에서도 시장가 주문이 `Limit IOC`로 변환될 때 체결 확률이 높아지도록 개선했습니다.
+- 주문 시 계산된 제한 가격(`P`)과 허용 비율(`Tol`)을 로그에 기록하여 추후 분석이 용이하게 했습니다.
 
-### 2. Files Relocated
-Files were safely relocated to their new homes using `git mv` so all commit histories were retained.
+### 2. 주문 취소 시 부분 체결 처리 개선
+- **[execution_manager.py](file:///Users/home/Project/project_hermes/src/core/execution_manager.py)**
+- 주문 상태가 [cancel](file:///tmp/test_order_logic.py#20-51)이더라도 **이미 체결된 수량(`executed_volume`)이 있다면 이를 무시하지 않고 포트폴리오에 기록**하도록 수정했습니다.
+- 이전에는 [cancel](file:///tmp/test_order_logic.py#20-51) 상태인 경우 모든 체결 내역을 무시했으나, 이제는 부분적으로라도 수익을 확보할 수 있도록 보장합니다.
 
-### 3. Core Imports Refactored
-All absolute (`import src.utils...`) and relative/module (`from utils.manager import...`) imports were updated automatically across [main.py](file:///Users/lamer/Project/stock/project_hermes/src/main.py), the strategy files, and between individual modules to correctly map to the new architectures.
+## 검증 결과
 
-## Validation Results
+### 모의 테스트(Mock Test) 통과
+[/tmp/test_order_logic.py](file:///tmp/test_order_logic.py)를 통해 다음 두 가지 시나리오를 검증 완료했습니다.
+- **부분 체결 시나리오**: [cancel](file:///tmp/test_order_logic.py#20-51) 상태의 주문에서 체결된 400개 수량이 `PortfolioManager`에 정상 기록됨을 확인.
+- **슬리피지 계산 시나리오**: 현재가 11.9일 때 1.0% 슬리피지가 적용되어 제한 가격 11.8로 주문이 생성됨을 확인.
 
-We verified the codebase by running [venv/bin/python](file:///Users/lamer/Project/stock/project_hermes/venv/bin/python) to statically link and import [src/main.py](file:///Users/lamer/Project/stock/project_hermes/src/main.py). The initialization completed with zero `ModuleNotFoundError`s, meaning the dependency mapping is completely intact and functional, ready for future development scaling.
+```text
+[2026-03-25 21:17:08] [INFO] [ExecutionManager] 주문 취소되었으나 부분 체결됨: KRW-ATH (400.0 sell)
+[2026-03-25 21:17:08] [INFO] [Broker API] 슬리피지 보호 활성화: ask KRW-ATH (Limit IOC, P: 11.8, V: 1000), CP: 11.9, Tol: 1.0%
+OK (2 tests passed)
+```
 
-> [!TIP]
-> The current system looks much cleaner and will make it significantly easier to implement your `Korea Investment & Securities (KIS) API` into `src/broker/` alongside Upbit, seamlessly adhering to the existing `interfaces/`.
+## 향후 모니터링
+- 향후 "강제 익절" 또는 "손절" 시그널 발생 시, 로그에서 `Tol: 1.0%`가 적용된 `Limit IOC` 주문이 원활하게 체결되는지 확인 바랍니다.

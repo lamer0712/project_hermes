@@ -149,7 +149,7 @@ class UpbitBroker(BaseBroker):
         price: str = None,
         ord_type: str = "limit",
         current_price: float = None,
-        slippage_tolerance: float = 0.005,
+        slippage_tolerance: float = 0.01,
     ) -> dict:
         """
         매수 또는 매도 주문을 실행합니다.
@@ -161,7 +161,7 @@ class UpbitBroker(BaseBroker):
             price: 주문 가격
             ord_type: 'limit' (지정가), 'price' (시장가 매수), 'market' (시장가 매도)
             current_price: 현재가 (슬리피지 보호용)
-            slippage_tolerance: 허용 슬리피지 (기본 0.5%)
+            slippage_tolerance: 허용 슬리피지 (기본 1.0%)
         """
         mock_trading = os.environ.get("MOCK_TRADING", "False").lower() == "true"
 
@@ -212,7 +212,7 @@ class UpbitBroker(BaseBroker):
             query["ord_type"] = "limit"
             query["time_in_force"] = "ioc"  # Immediate Or Cancel
             logger.info(
-                f"[Broker API] 슬리피지 보호 활성화: {side} {ticker} (Limit IOC, P: {query['price']}, V: {query['volume']}), CP: {current_price}"
+                f"[Broker API] 슬리피지 보호 활성화: {side} {ticker} (Limit IOC, P: {query['price']}, V: {query['volume']}), CP: {current_price}, Tol: {slippage_tolerance*100}%"
             )
 
         # 시장가 매수(지정된 금액만큼)인 경우 - current_price가 없어서 변환 불가 시
