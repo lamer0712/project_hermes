@@ -1,11 +1,11 @@
 import time
-from src.utils.broker_api import UpbitBroker
+from src.broker.broker_api import UpbitBroker
 from src.strategies.base import SignalType
 from src.utils.logger import logger
 from src.strategies.strategy_manager import StrategyManager
-from src.utils.risk_manager import RiskManager
-from src.utils.telegram_notifier import TelegramNotifier
-from src.utils.execution_manager import ExecutionManager
+from src.core.risk_manager import RiskManager
+from src.communication.telegram_notifier import TelegramNotifier
+from src.core.execution_manager import ExecutionManager
 
 
 class ManagerAgent:

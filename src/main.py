@@ -12,14 +12,14 @@ import time
 import schedule
 import concurrent.futures
 import threading
-from src.utils.manager import ManagerAgent
-from src.utils.broker_api import UpbitBroker
-from src.utils.portfolio_manager import PortfolioManager
-from src.utils.telegram_notifier import TelegramNotifier
-from src.interfaces.telegram_listener import run_telegram_listener
-from src.interfaces.upbit_websocket import UpbitWebSocketClient
+from src.core.manager import ManagerAgent
+from src.broker.broker_api import UpbitBroker
+from src.core.portfolio_manager import PortfolioManager
+from src.communication.telegram_notifier import TelegramNotifier
+from src.communication.telegram_listener import run_telegram_listener
+from src.data.upbit_websocket import UpbitWebSocketClient
 
-from src.utils.command_handler import CommandQueueHandler
+from src.communication.command_handler import CommandQueueHandler
 from src.utils.logger import logger
 
 # 코인 대상 티커 설정 (동적으로 업데이트됨)

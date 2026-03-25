@@ -25,9 +25,9 @@ from telegram.ext import (
     filters,
     ContextTypes,
 )
-from src.utils.command_queue import CommandQueue
+from src.communication.command_queue import CommandQueue
 from src.utils.logger import logger
-from src.utils.llm_client import get_llm_client
+from src.ai.llm_client import get_llm_client
 from telegram.error import NetworkError
 
 AUTHORIZED_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")

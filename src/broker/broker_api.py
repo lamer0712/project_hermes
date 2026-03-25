@@ -5,7 +5,7 @@ import uuid
 import hashlib
 from urllib.parse import urlencode
 from src.utils.logger import logger
-from src.utils.market_data import UpbitMarketData
+from src.data.market_data import UpbitMarketData
 from decimal import Decimal, ROUND_HALF_UP
 from src.interfaces.broker import BaseBroker
 

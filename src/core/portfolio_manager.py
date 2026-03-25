@@ -3,10 +3,10 @@ import json
 import traceback
 from datetime import datetime
 from src.utils.markdown_io import write_markdown
-from src.utils.telegram_notifier import TelegramNotifier
+from src.communication.telegram_notifier import TelegramNotifier
 from src.utils.logger import logger
-from src.utils.broker_api import UpbitBroker
-from src.utils.db import DatabaseManager
+from src.broker.broker_api import UpbitBroker
+from src.data.db import DatabaseManager
 
 
 class PortfolioManager:

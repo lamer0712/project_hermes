@@ -4,8 +4,8 @@ import json
 import math
 import glob
 import traceback
-from src.utils.command_queue import CommandQueue
-from src.utils.broker_api import UpbitBroker
+from src.communication.command_queue import CommandQueue
+from src.broker.broker_api import UpbitBroker
 from src.utils.logger import logger
 
 

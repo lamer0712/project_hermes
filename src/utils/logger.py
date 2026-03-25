@@ -2,7 +2,7 @@ import logging
 import sys
 import os
 from logging.handlers import RotatingFileHandler
-from src.utils.telegram_notifier import TelegramNotifier
+from src.communication.telegram_notifier import TelegramNotifier
 
 
 class TelegramLoggingHandler(logging.Handler):
