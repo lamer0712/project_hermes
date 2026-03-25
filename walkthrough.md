@@ -15,6 +15,11 @@
 - 주문 상태가 [cancel](file:///tmp/test_order_logic.py#20-51)이더라도 **이미 체결된 수량(`executed_volume`)이 있다면 이를 무시하지 않고 포트폴리오에 기록**하도록 수정했습니다.
 - 이전에는 [cancel](file:///tmp/test_order_logic.py#20-51) 상태인 경우 모든 체결 내역을 무시했으나, 이제는 부분적으로라도 수익을 확보할 수 있도록 보장합니다.
 
+### 3. 전략 매도 메시지 고도화 ([익절]/[손절] 구분)
+- **[breakout.py](file:///Users/home/Project/project_hermes/src/strategies/breakout.py), [pullback_trend.py](file:///Users/home/Project/project_hermes/src/strategies/pullback_trend.py)**
+- 기존에는 `[익절/손절]`로 통합 표기되던 메시지를, **현재가와 평단가를 비교하여 실제 수익 상태에 따라 `[익절]` 또는 `[손절]`로 명확히 구분**하여 표시하도록 수정했습니다.
+- 이를 통해 텔레그램 알림만으로도 현재 매도의 성격을 바로 파악할 수 있습니다.
+
 ## 검증 결과
 
 ### 모의 테스트(Mock Test) 통과
