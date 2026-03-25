@@ -156,7 +156,7 @@ class ManagerAgent:
                     portfolio_info,
                 )
 
-                if signal is None or signal_tmp.strength > signal.strength:
+                if signal is None or signal_tmp.confidence > signal.confidence:
                     signal = signal_tmp
                     strategy = strategy_tmp
 
