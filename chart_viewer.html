@@ -734,6 +734,20 @@
                 tooltip.classList.add("show");
                 const change = ((d.close - d.open) / d.open * 100).toFixed(2);
                 const changeColor = d.close >= d.open ? "var(--blue)" : "var(--red)";
+
+                let regimeHtml = '';
+                if (window.regimesData) {
+                    for (const r of window.regimesData) {
+                        const start = toUnixTimestamp(r.start);
+                        const end = toUnixTimestamp(r.end);
+                        if (param.time >= start && param.time <= end) {
+                            const rc = REGIME_COLORS[r.regime] || REGIME_COLORS.unknown;
+                            regimeHtml = `<span style="color:${rc.text}; font-weight:700; background:${rc.bg}; border:1px solid ${rc.border}; padding:1px 6px; border-radius:4px; font-size:10px; text-transform:uppercase;">${rc.label}</span>`;
+                            break;
+                        }
+                    }
+                }
+
                 tooltip.innerHTML = `
             <div class="tooltip-row">
                 <span class="tooltip-label">O</span> ${formatPrice(d.open)}
@@ -742,6 +756,7 @@
                 <span class="tooltip-label">C</span> ${formatPrice(d.close)}
                 <span style="color:${changeColor};font-weight:600;">${change}%</span>
                 ${vol ? `<span class="tooltip-label">V</span> ${vol.value?.toFixed(2) || ''}` : ''}
+                ${regimeHtml}
             </div>
         `;
             });
@@ -958,12 +973,14 @@
         function clearRegimeBoxes() {
             regimeBoxElements.forEach(el => el.remove());
             regimeBoxElements = [];
+            window.regimesData = null;
         }
 
         async function loadRegime() {
             clearRegimeBoxes();
             const regimes = await fetchJSON(`/api/regime?ticker=${currentTicker}&count=200&interval=${currentInterval}`);
             if (!regimes || regimes.length === 0) return;
+            window.regimesData = regimes;
 
             // We'll overlay colored div boxes on the chart
             const chartEl = document.getElementById("main-chart");
@@ -985,21 +1002,6 @@
             z-index: 0;
         `;
 
-                // Label
-                const lbl = document.createElement("div");
-                lbl.textContent = rc.label;
-                lbl.style.cssText = `
-            position: absolute;
-            top: 4px;
-            left: 4px;
-            font-size: 9px;
-            font-weight: 600;
-            color: ${rc.text};
-            opacity: 0.7;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-        `;
-                box.appendChild(lbl);
                 chartEl.appendChild(box);
                 regimeBoxElements.push(box);
 

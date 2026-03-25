@@ -129,7 +129,7 @@ class UpbitMarketData:
 
         # 3. Early Bull (핵심 추가)
         if ma20 > ma60 and ema_slope > 0 and adx > 18:
-            return "bearish"
+            return "bullish"
 
         # 4. Strong Bull
         if ma20 > ma60 * 1.005 and rsi > 55 and adx > 22:
