@@ -1,4 +1,5 @@
 import time
+import numpy as np
 import requests
 import concurrent.futures
 from src.utils.logger import logger
@@ -302,17 +303,27 @@ class UpbitMarketData(BaseMarketData):
         return results
 
     @classmethod
+    def get_weights(cls, regime: str) -> tuple[float, float]:
+        return {
+            "bullish": (0.75, 0.25),  # 추세 추종
+            "bearish": (0.35, 0.65),  # 방어 + 유동성 중심
+            "ranging": (0.45, 0.55),  # mean-reversion 대비
+            "volatile": (0.30, 0.70),  # 노이즈 → 거래대금 중요
+            "panic": (0.20, 0.80),  # 생존 모드 (유동성 최우선)
+        }.get(regime, (0.5, 0.5))
+
+    @classmethod
     def get_dynamic_target_coins(cls, top_n: int = 20) -> list:
         """
         [Dynamic Selection]
-        주간 상승률 순위와 일 매수 체결강도 순위를 종합하여 상위 N개 코인을 반환합니다.
-        가장 먼저 24시간 거래대금이 충분한(100억 원 이상) KRW 마켓 코인 약 15~20개를 필터링합니다.
+        24시간 변화율과 거래대금을 z-score 정규화하여 상위 N개 코인을 반환합니다.
+        /ticker API 한 번으로 모든 데이터를 확보합니다 (추가 API 호출 없음).
         """
         headers = {"accept": "application/json"}
         logger.info(f"[Market Data API] 동적 대상 코인 Top {top_n} 검색 시작...")
 
         try:
-            # 1. 모든 코인 가져와서 KRW 마켓만 필터링 후 24시간 거래대금 기준 1차 필터링
+            # 1. KRW 마켓 중 경고 없는 코인만 필터링
             market_url = f"{cls.BASE_URL}/market/all?isDetails=true"
             markets = requests.get(market_url, headers=headers).json()
             krw_markets = [
@@ -322,86 +333,68 @@ class UpbitMarketData(BaseMarketData):
                 and m["market_event"]["warning"] == False
             ]
 
+            # 2. /ticker 한 번 호출로 모든 데이터 확보
             ticker_url = f"{cls.BASE_URL}/ticker?markets={','.join(krw_markets)}"
             tickers = requests.get(ticker_url, headers=headers).json()
-            # 거래대금 100억 이상인 탄탄한 종목만 1차 후보로 선정
-            solid_markets = [
-                t["market"]
-                for t in tickers
-                if t.get("acc_trade_price_24h", 0) >= 10000000000
-            ]
 
+            # 3. 거래대금 필터 + 스코어링 데이터 추출
             stats = []
-            for market in solid_markets:
-                try:
-                    # 2. 주간 상승률 계산
-                    week_url = f"{cls.BASE_URL}/candles/weeks?market={market}&count=1"
-                    week_data = requests.get(week_url, headers=headers).json()
-                    opening = week_data[0]["opening_price"]
-                    trade = week_data[0]["trade_price"]
-                    weekly_return = ((trade - opening) / opening) * 100
+            for t in tickers:
+                acc_trade = t.get("acc_trade_price_24h", 0)
+                if acc_trade < 5_000_000_000:  # 5,000백만 미만 제외
+                    continue
 
-                    # 3. 매수 체결강도 계산 (최근 500개 틱 기준 근사치)
-                    tick_url = f"{cls.BASE_URL}/trades/ticks?market={market}&count=500"
-                    ticks = requests.get(tick_url, headers=headers).json()
-                    buy_vol = sum(
-                        t["trade_volume"] for t in ticks if t["ask_bid"] == "ASK"
-                    )
-                    sell_vol = sum(
-                        t["trade_volume"] for t in ticks if t["ask_bid"] == "BID"
-                    )
-                    exec_strength = (
-                        (buy_vol / sell_vol * 100) if sell_vol > 0 else 100.0
-                    )
+                change_rate = np.tanh(t.get("signed_change_rate", 0) * 3)  # → %
+                volume_score = np.log(acc_trade) * abs(
+                    change_rate
+                )  # log 스케일 거래대금
 
-                    stats.append(
-                        {
-                            "market": market,
-                            "weekly_return": weekly_return,
-                            "exec_strength": exec_strength,
-                        }
-                    )
-                    time.sleep(0.1)  # API Rate Limit 보호
-                except Exception as inner_e:
-                    # 일부 코인은 틱이 부족하거나 에러가 날 수 있으므로 무시하고 다음 진행
-                    pass
+                stats.append(
+                    {
+                        "market": t["market"],
+                        "change_rate": change_rate,
+                        "volume_score": volume_score,
+                    }
+                )
 
             if not stats:
-                return ["KRW-BTC", "KRW-ETH", "KRW-SOL"]  # Fallback
+                return ["KRW-BTC", "KRW-ETH"]  # Fallback
 
-            # 4. 순위 매기기 로직
-            # 주간 상승률 순위 (높을수록 좋음, 0이 1등)
-            stats.sort(key=lambda x: x["weekly_return"], reverse=True)
+            # 4. z-score 정규화 후 가중합
+            cr = np.array([s["change_rate"] for s in stats])
+            vs = np.array([s["volume_score"] for s in stats])
+
+            cr_norm = (cr - cr.mean()) / (cr.std() + 1e-6)
+            vs_norm = (vs - vs.mean()) / (vs.std() + 1e-6)
+
+            regime = cls.market_regime()
+            w_cr, w_vs = cls.get_weights(regime)
+
             for i, s in enumerate(stats):
-                s["rtn_rank"] = i
+                s["score"] = w_cr * cr_norm[i] + w_vs * vs_norm[i]
 
-            # 체결 강도 순위 (높을수록 좋음, 0이 1등)
-            stats.sort(key=lambda x: x["exec_strength"], reverse=True)
-            for i, s in enumerate(stats):
-                s["str_rank"] = i
+            # 스코어 높은 순으로 정렬 → 순서 보존 list
+            stats.sort(key=lambda x: x["score"], reverse=True)
 
-            # 종합 순위 (두 순위의 합이 낮을수록 좋음)
-            for s in stats:
-                s["total_score"] = s["rtn_rank"] + s["str_rank"]
+            # 상위 N개 추출 (순서 보존) + BTC/ETH 보장
+            if regime in ["panic", "volatile"]:
+                top_n = max(5, top_n // 2)
 
-            stats.sort(key=lambda x: x["total_score"])
-
-            # 상위 N개 마켓명 추출
-            top_coins = {s["market"] for s in stats[:top_n]} | {
-                "KRW-BTC",
-                "KRW-ETH",
-            }
+            top_coins = [s["market"] for s in stats[:top_n]]
+            for must_have in ["KRW-BTC", "KRW-ETH"]:
+                if must_have not in top_coins:
+                    top_coins.append(must_have)
 
             logger.info(f"[Market Data API] 동적 대상 코인 선정 완료: {top_coins}")
-            return list(top_coins)
+            return top_coins
 
         except Exception as e:
             logger.error(f"[Market Data Error] 동적 코인 선정 실패, 기본값 반환: {e}")
-            return ["KRW-BTC", "KRW-ETH", "KRW-SOL"]
+            return ["KRW-BTC", "KRW-ETH"]
 
 
 if __name__ == "__main__":
     # 테스트 로직
     logger.info("Testing dynamic coin selection...")
-    res_coins = UpbitMarketData.get_dynamic_target_coins(5)
+    res_coins = UpbitMarketData.get_dynamic_target_coins(20)
     logger.info(res_coins)
