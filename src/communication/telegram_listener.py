@@ -144,6 +144,18 @@ async def cmd_eval(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
+async def cmd_report(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    chat_id = str(update.effective_chat.id)
+    if chat_id != AUTHORIZED_CHAT_ID:
+        return
+
+    CommandQueue.push("report", {})
+    await context.bot.send_message(
+        chat_id=chat_id,
+        text="✅ **report** 명령 접수\n⏳ 전략별 수익률 리포트를 생성합니다 (최대 2초 내)",
+    )
+
+
 async def unknown_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """지정되지 않은 명령어를 처리합니다."""
     chat_id = str(update.effective_chat.id)
@@ -232,6 +244,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 /restart — 시스템을 재시작합니다
 /kill — 시스템을 강제 종료합니다
 /eval [코인심볼] — 특정 코인의 최신 전략 및 시그널 상태를 조회합니다
+/report — 전략별 수익률 리포트를 조회합니다
 
 명령어 이외의 대화는 Manager Agent가 자연어로 답변합니다!"""
     await context.bot.send_message(chat_id=update.effective_chat.id, text=help_text)
@@ -408,6 +421,7 @@ def run_telegram_listener():
     application.add_handler(CommandHandler("resume", cmd_resume))
     application.add_handler(CommandHandler("clear", cmd_clear))
     application.add_handler(CommandHandler("eval", cmd_eval))
+    application.add_handler(CommandHandler("report", cmd_report))
 
     application.add_handler(MessageHandler(filters.COMMAND, unknown_command))
     application.add_handler(

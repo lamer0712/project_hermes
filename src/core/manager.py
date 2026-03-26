@@ -29,9 +29,9 @@ class ManagerAgent:
         self.strategy_map = {
             "bullish": ["Breakout", "PullbackTrend"],
             "ranging": ["VWAPReversion", "MeanReversion"],
-            "volatile": ["Breakout"],
-            "bearish": ["Bearish"],
-            "panic": ["Panic"],
+            "volatile": ["Breakout", "VWAPReversion"],
+            # "bearish": ["Bearish"],
+            # "panic": ["Panic"],
         }
 
         # 마지막 싸이클의 종목별 평가 결과 저장
@@ -147,7 +147,19 @@ class ManagerAgent:
             signal = None
             strategy = None
             for strategy_name in target_strategy_names:
-                strategy_tmp = self.strategy_manager.get_strategy(strategy_name)
+                # volatile regime에서 Breakout은 거래량 조건 강화 (1.3x → 1.8x)
+                override_params = None
+                if ticker_regime == "volatile" and strategy_name == "Breakout":
+                    override_params = {
+                        "entry": {
+                            "timeframe": "15m",
+                            "volume_multiplier": 1.8,
+                            "breakout_buffer": 0.002,
+                        }
+                    }
+                strategy_tmp = self.strategy_manager.get_strategy(
+                    strategy_name, override_params
+                )
 
                 signal_tmp = strategy_tmp.evaluate(
                     ticker,

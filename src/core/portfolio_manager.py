@@ -264,6 +264,8 @@ class PortfolioManager:
 
         avg_price = holdings[ticker]["avg_price"]
         max_price = max(holdings[ticker].get("max_price", avg_price), avg_price)
+        # 삭제 전에 전략명을 미리 캡처 (삭제 후에는 조회 불가)
+        strategy = holdings[ticker].get("strategy", "Unknown")
 
         profit = sell_revenue_net - (avg_price * volume)
         profit_ratio = (profit / (avg_price * volume)) * 100
@@ -281,8 +283,6 @@ class PortfolioManager:
         portfolio["total_trades"] = portfolio.get("total_trades", 0) + 1
         if profit > 0:
             portfolio["winning_trades"] = portfolio.get("winning_trades", 0) + 1
-
-        strategy = holdings.get(ticker, {}).get("strategy", "Unknown")
 
         self.save_state()
         self.db.record_trade(

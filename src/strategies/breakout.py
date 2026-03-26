@@ -86,14 +86,15 @@ class BreakoutStrategy(BaseStrategy):
                     1.0,
                 )
 
-            # 상승장 중 단기 지지선 일시 이탈은 버티고, 15분 MA20 생명선 이탈 시 전량 청산
-            if price < ma20:
+            # 2연속 봉 MA20 하회 시에만 청산 (단발 노이즈 필터링)
+            prev_ma20 = float(prev.get("ma_20", prev_price))
+            if price < ma20 and prev_price < prev_ma20:
                 avg_price = holdings[ticker].get("avg_price", 0)
                 tag = "[익절]" if price > avg_price else "[손절]"
                 return Signal(
                     SignalType.SELL,
                     ticker,
-                    f"{tag} 생명선(MA20) 이탈",
+                    f"{tag} 생명선(MA20) 2연속 이탈",
                     1.0,
                     1.0,
                 )
@@ -116,11 +117,11 @@ class BreakoutStrategy(BaseStrategy):
 
         entry_cfg = self.params["entry"]
 
-        # not breakout
-        if price <= recent_high * 0.998:
+        # not breakout (확실한 돌파: 고점 대비 +0.3% 초과 필요)
+        if price <= recent_high * 1.003:
             return Signal(SignalType.HOLD, ticker, "대기 (돌파 조건 미달)", 0, 0.0)
 
-        strength = 0.5
+        strength = 0.3
 
         # volume trigger
         if volume > volume_ma * entry_cfg["volume_multiplier"]:

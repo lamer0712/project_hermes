@@ -6,6 +6,7 @@ import glob
 import traceback
 from src.communication.command_queue import CommandQueue
 from src.broker.broker_api import UpbitBroker
+from src.data.strategy_report import generate_report
 from src.utils.logger import logger
 
 
@@ -35,6 +36,7 @@ class CommandQueueHandler:
             "resume": self._handle_resume,
             "clear": self._handle_clear,
             "eval": self._handle_eval,
+            "report": self._handle_report,
         }
 
     def process(self):
@@ -140,6 +142,15 @@ class CommandQueueHandler:
 
         self.notifier.send_message("🧹 *시스템 로그 및 거래 내역(DB) 정리 완료*")
         logger.info("[System] Logs and trade history cleared.")
+
+    def _handle_report(self, params):
+        """전략별 수익률 분석 리포트를 생성하여 전송합니다."""
+        try:
+            report = generate_report()
+            self.notifier.send_message(report)
+        except Exception as e:
+            logger.error(f"[Command Queue] 리포트 생성 오류: {e}")
+            self.notifier.send_message(f"❌ 리포트 생성 실패: {e}")
 
     def _handle_eval(self, params):
         """특정 티커의 가장 최근 평가 결과를 전송합니다."""
