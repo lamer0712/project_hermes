@@ -46,8 +46,7 @@ class PullbackTrendStrategy(BaseStrategy):
         portfolio_info: dict = {},
     ) -> Signal:
 
-        holdings = portfolio_info.get("holdings", {})
-        is_held = ticker in holdings and holdings[ticker]["volume"] > 0
+        holdings, is_held = self.parse_holdings(ticker, portfolio_info)
 
         current_price = float(entry_market_data.close.iloc[-1])
         prev_price = float(entry_market_data.close.iloc[-2])
@@ -150,8 +149,7 @@ class PullbackTrendStrategy(BaseStrategy):
 
             size_ratio = self.params["position_size_ratio"]
             
-            # 동점자 방지를 위한 RSI 과매도 미세가중 (0.00 ~ 0.09) - 낮을수록 보너스 
-            rsi_bonus = min(max(100 - rsi_entry, 1), 99) / 1000.0
+            rsi_bonus = self.rsi_tiebreaker(rsi_entry, mode="oversold")
             final_conf = min(strength + rsi_bonus, 1.0)
 
             return Signal(
@@ -172,7 +170,7 @@ class PullbackTrendStrategy(BaseStrategy):
 
         if strong_breakout:
             size_ratio = self.params["position_size_ratio"]
-            rsi_bonus = min(max(rsi_entry, 1), 99) / 1000.0
+            rsi_bonus = self.rsi_tiebreaker(rsi_entry, mode="momentum")
             return Signal(
                 SignalType.BUY,
                 ticker,

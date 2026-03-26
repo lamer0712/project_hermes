@@ -36,8 +36,7 @@ class VWAPReversionStrategy(BaseStrategy):
         entry_market_data,
         portfolio_info: dict = None,
     ) -> Signal:
-        holdings = portfolio_info.get("holdings", {})
-        is_held = ticker in holdings and holdings[ticker]["volume"] > 0
+        holdings, is_held = self.parse_holdings(ticker, portfolio_info)
 
         df = entry_market_data
         if len(df) < 5 or "vwap" not in df.columns:
@@ -115,8 +114,7 @@ class VWAPReversionStrategy(BaseStrategy):
             ):
                 strength = score * self.params["position_size_ratio"]
 
-                # 동점자 방지를 위한 RSI 과매도 미세가중 (0.00 ~ 0.09) - 낮을수록 보너스
-                rsi_bonus = min(max(100 - rsi, 1), 99) / 1000.0
+                rsi_bonus = self.rsi_tiebreaker(rsi, mode="oversold")
                 final_conf = min(score + rsi_bonus, 1.0)
 
                 return Signal(

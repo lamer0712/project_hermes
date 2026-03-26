@@ -37,6 +37,36 @@ class BaseStrategy(ABC):
         self.params = params or {}
         self.regime = params.get("regime", None)
 
+    # --------------------------------------------------
+    # 공통 헬퍼 메서드
+    # --------------------------------------------------
+
+    def parse_holdings(self, ticker: str, portfolio_info: dict):
+        """보유 종목 정보 파싱 — 모든 전략의 evaluate() 첫 줄에서 반복되던 로직"""
+        holdings = portfolio_info.get("holdings", {})
+        is_held = ticker in holdings and holdings[ticker]["volume"] > 0
+        return holdings, is_held
+
+    def validate_entry_data(self, ticker: str, entry_market_data, min_length: int = 20):
+        """entry 데이터 유효성 검증 — None이거나 길이 부족 시 HOLD Signal 반환"""
+        if entry_market_data is None or len(entry_market_data) < min_length:
+            return Signal(SignalType.HOLD, ticker, "데이터 부족", 0, 0.0)
+        return None  # 통과
+
+    @staticmethod
+    def rsi_tiebreaker(rsi_value: float, mode: str = "oversold") -> float:
+        """
+        동점자 방지용 RSI 미세가중치 (0.000 ~ 0.099)
+        - mode="oversold" : 낮을수록 보너스 (MeanReversion, PullbackTrend 등)
+        - mode="momentum" : 높을수록 보너스 (Breakout)
+        """
+        raw = (100 - rsi_value) if mode == "oversold" else rsi_value
+        return min(max(raw, 0), 99) / 1000.0
+
+    # --------------------------------------------------
+    # 기존 판단 유틸
+    # --------------------------------------------------
+
     @staticmethod
     def is_downtrend(df):
         ema20 = df["ema_20"].iloc[-1]

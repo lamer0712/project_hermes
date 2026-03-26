@@ -29,8 +29,7 @@ class PanicStrategy(BaseStrategy):
         entry_market_data: pd.DataFrame,
         portfolio_info: dict = None,
     ):
-        holdings = portfolio_info.get("holdings", {})
-        is_held = ticker in holdings and holdings[ticker]["volume"] > 0
+        holdings, is_held = self.parse_holdings(ticker, portfolio_info)
 
         price = float(entry_market_data.close.iloc[-1])
         rsi = float(entry_market_data.rsi_14.iloc[-1])
@@ -59,8 +58,7 @@ class PanicStrategy(BaseStrategy):
         )
 
         if rebound and rsi < 35:
-            # 동점자 방지를 위한 RSI 과매도 미세가중 (0.00 ~ 0.09) - 낮을수록 보너스
-            rsi_bonus = min(max(100 - rsi, 1), 99) / 1000.0
+            rsi_bonus = self.rsi_tiebreaker(rsi, mode="oversold")
             final_conf = min(0.9 + rsi_bonus, 1.0)
 
             return Signal(

@@ -49,11 +49,11 @@ class MeanReversionStrategy(BaseStrategy):
         portfolio_info: dict = None,
     ) -> Signal:
 
-        holdings = portfolio_info.get("holdings", {})
-        is_held = ticker in holdings and holdings[ticker]["volume"] > 0
+        holdings, is_held = self.parse_holdings(ticker, portfolio_info)
 
-        if entry_market_data is None or len(entry_market_data) < 20:
-            return Signal(SignalType.HOLD, ticker, "데이터 부족", 0.0, 0.0)
+        hold_signal = self.validate_entry_data(ticker, entry_market_data)
+        if hold_signal:
+            return hold_signal
 
         current = entry_market_data.iloc[-1]
 
@@ -151,10 +151,8 @@ class MeanReversionStrategy(BaseStrategy):
         if conditions >= 2:
             conf = min(0.4 + (conditions * 0.15), 1.0)
             
-            # 동점자 방지를 위한 RSI 과매도 미세가중 (0.00 ~ 0.09) - 낮을수록 보너스
-            current_entry = entry_market_data.iloc[-1]
-            rsi_val = float(current_entry.get("rsi_14", 50))
-            rsi_bonus = min(max(100 - rsi_val, 1), 99) / 1000.0
+            rsi_val = float(entry_market_data.iloc[-1].get("rsi_14", 50))
+            rsi_bonus = self.rsi_tiebreaker(rsi_val, mode="oversold")
             final_conf = min(conf + rsi_bonus, 1.0)
 
             return Signal(

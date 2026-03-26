@@ -32,8 +32,7 @@ class BearishStrategy(BaseStrategy):
         entry_market_data: pd.DataFrame,
         portfolio_info: dict = None,
     ):
-        holdings = portfolio_info.get("holdings", {})
-        is_held = ticker in holdings and holdings[ticker]["volume"] > 0
+        holdings, is_held = self.parse_holdings(ticker, portfolio_info)
 
         price = float(entry_market_data.close.iloc[-1])
         rsi = float(entry_market_data.rsi_14.iloc[-1])
@@ -79,8 +78,7 @@ class BearishStrategy(BaseStrategy):
         trend_filter = price > ma20 * self.params["entry"]["trend_filter"]
 
         if rebound and volume_ok and trend_filter:
-            # 동점자 방지를 위한 RSI 과매도 미세가중 (0.00 ~ 0.09) - 낮을수록 보너스
-            rsi_bonus = min(max(100 - rsi, 1), 99) / 1000.0
+            rsi_bonus = self.rsi_tiebreaker(rsi, mode="oversold")
             final_conf = min(0.8 + rsi_bonus, 1.0)
 
             return Signal(
