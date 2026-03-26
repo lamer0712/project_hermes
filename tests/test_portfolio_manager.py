@@ -1,8 +1,8 @@
 import pytest
 import os
 import json
-from src.utils.portfolio_manager import PortfolioManager
-from src.utils.db import DatabaseManager
+from src.core.portfolio_manager import PortfolioManager
+from src.data.db import DatabaseManager
 
 @pytest.fixture
 def temp_db():

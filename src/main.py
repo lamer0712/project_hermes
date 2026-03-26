@@ -14,6 +14,7 @@ import concurrent.futures
 import threading
 from src.core.manager import ManagerAgent
 from src.broker.broker_api import UpbitBroker
+from src.data.market_data import UpbitMarketData
 from src.core.portfolio_manager import PortfolioManager
 from src.communication.telegram_notifier import TelegramNotifier
 from src.communication.telegram_listener import run_telegram_listener
@@ -24,6 +25,8 @@ from src.utils.logger import logger
 
 # 코인 대상 티커 설정 (동적으로 업데이트됨)
 TARGET_COINS = []  # 기본값
+
+AGENT_NAME = "crypto_manager"
 
 
 def get_upbit_krw_balance() -> float:
@@ -47,8 +50,7 @@ def get_upbit_krw_balance() -> float:
 def update_target_coins():
     global TARGET_COINS
     logger.info("--- [System] 동적 대상 코인 선정 프로세스 시작 ---")
-    broker = UpbitBroker()
-    new_coins = broker.get_dynamic_target_coins(top_n=20)
+    new_coins = UpbitMarketData.get_dynamic_target_coins(top_n=20)
     if new_coins:
         TARGET_COINS = new_coins
     logger.info(f"--- [System] 현재 타겟 코인: {TARGET_COINS} ---")
@@ -65,19 +67,20 @@ def execute_trading_cycle(manager: ManagerAgent):
         for b in balances
         if b.get("currency") != "KRW" and float(b.get("balance", "0")) > 0
     ]
+    blacklisted = UpbitMarketData._blacklisted_markets
     all_tickers = [
-        t for t in set(TARGET_COINS + held_coins) if t not in broker.blacklisted_markets
+        t for t in set(TARGET_COINS + held_coins) if t not in blacklisted
     ]
 
     logger.info(
-        f"--- [System] Monitoring {len(all_tickers)} Tickers (블랙리스트 {len(broker.blacklisted_markets)}개 제외) ---"
+        f"--- [System] Monitoring {len(all_tickers)} Tickers (블랙리스트 {len(blacklisted)}개 제외) ---"
     )
 
     # 0. Get Advanced Market Data (OHLCV + Indicators) for each Target Coin
-    setup_market_data = broker.get_multiple_ohlcv_with_indicators(
+    setup_market_data = UpbitMarketData.get_multiple_ohlcv_with_indicators(
         all_tickers, count=200, interval="minutes/60"
     )
-    entry_market_data = broker.get_multiple_ohlcv_with_indicators(
+    entry_market_data = UpbitMarketData.get_multiple_ohlcv_with_indicators(
         all_tickers, count=200, interval="minutes/15"
     )
 
@@ -92,7 +95,7 @@ def execute_trading_cycle(manager: ManagerAgent):
         logger.error("[System] Failed to fetch market data from Upbit. Skipping cycle.")
         return
 
-    market_regime = broker.market_regime()
+    market_regime = UpbitMarketData.market_regime()
     logger.info(f"[Market Indicators] Market regime: {market_regime}")
 
     # 2. Manager evalutes market
@@ -106,7 +109,7 @@ def execute_daily_sync(pm, manager, notifier):
     logger.info("[Manager] Performing daily audit...")
     update_target_coins()
     try:
-        sync_result = pm.synchronize_balances(manager)
+        sync_result = pm.synchronize_balances(manager.name)
         notifier.send_message(sync_result)
         
         # 매일 자정에 7일 지난 과거 DB 거래이력 찌꺼기 삭제 수행
@@ -130,9 +133,9 @@ def main():
     pm = PortfolioManager(total_capital=total_capital)
 
     # 기존 상태가 없으면 초기 배분
-    if not pm.portfolios or "manager" not in pm.portfolios:
-        logger.info(f"💰 기존 포트폴리오 상태가 없거나 manager가 없어 초기화합니다.")
-        pm.allocate("manager", total_capital)
+    if not pm.portfolios or AGENT_NAME not in pm.portfolios:
+        logger.info(f"💰 기존 포트폴리오 상태가 없거나 {AGENT_NAME}가 없어 초기화합니다.")
+        pm.allocate(AGENT_NAME, total_capital)
     else:
         logger.info(f"💰 기존 포트폴리오 상태 복원 완료")
         for name in pm.portfolios:
@@ -142,7 +145,7 @@ def main():
             )
 
     # 2. 투자 매니저 및 전략 객체 초기화
-    manager = ManagerAgent("manager", portfolio_manager=pm)
+    manager = ManagerAgent(AGENT_NAME, portfolio_manager=pm)
 
     # 3. 실시간 리스크 훅 처리용 웹소켓 클라이언트 시작
     # 타겟 코인 + 현재 보유 코인 통합
@@ -167,7 +170,7 @@ def main():
         sys.exit(0)
 
     # 스케줄러 등록
-    pm.export_portfolio_report("manager")
+    pm.export_portfolio_report(AGENT_NAME)
 
     # 5. 스레드 풀 초기화
     executor = concurrent.futures.ThreadPoolExecutor(max_workers=5)

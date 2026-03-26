@@ -112,22 +112,24 @@ class CommandQueueHandler:
 
     def _handle_sync(self, params):
         """업비트 실계좌 잔고를 동기화합니다."""
-        sync_result = self.pm.synchronize_balances(self.manager)
+        sync_result = self.pm.synchronize_balances(self.manager.name)
         self.notifier.send_message(sync_result)
 
     def _handle_halt(self, params):
         """거래를 중지합니다."""
-        if self.pm.set_halt("manager", True):
-            self.notifier.send_message(f"🛑 *[manager] 거래 중지 설정 완료*")
+        agent_name = self.manager.name
+        if self.pm.set_halt(agent_name, True):
+            self.notifier.send_message(f"🛑 *[{agent_name}] 거래 중지 설정 완료*")
         else:
-            self.notifier.send_message(f"❌ *[manager] 거래 중지 설정 실패*")
+            self.notifier.send_message(f"❌ *[{agent_name}] 거래 중지 설정 실패*")
 
     def _handle_resume(self, params):
         """거래를 재개합니다."""
-        if self.pm.set_halt("manager", False):
-            self.notifier.send_message(f"✅ *[manager] 거래 재개 설정 완료*")
+        agent_name = self.manager.name
+        if self.pm.set_halt(agent_name, False):
+            self.notifier.send_message(f"✅ *[{agent_name}] 거래 재개 설정 완료*")
         else:
-            self.notifier.send_message(f"❌ *[manager] 거래 재개 설정 실패*")
+            self.notifier.send_message(f"❌ *[{agent_name}] 거래 재개 설정 실패*")
 
     def _handle_clear(self, params):
         """시스템 로그 및 DB 거래 내역을 정리합니다."""
@@ -184,7 +186,7 @@ class CommandQueueHandler:
         msg = f"⚙️ **전략별 모니터링 (개별)**\n"
         msg += f"• {t} [{r}]: {s} → {st}_{ss:.0%} (Conf: {sc:.0%})\n  └ {sr}\n"
 
-        holdings = self.pm.get_holdings("manager")
+        holdings = self.pm.get_holdings(self.manager.name)
         if ticker in holdings and holdings[ticker]["volume"] > 0:
             h = holdings[ticker]
             buy_strategy = h.get("strategy", "Unknown")
@@ -222,7 +224,7 @@ class CommandQueueHandler:
     def _get_status_message(self) -> str:
         """포트폴리오 상태 메시지를 생성합니다."""
         pm = self.pm
-        target_agent = "manager"
+        target_agent = self.manager.name
 
         if target_agent in pm.portfolios:
             s = pm.get_portfolio_summary(target_agent)
@@ -261,7 +263,7 @@ class CommandQueueHandler:
 
     def _execute_liquidate(self, params: dict) -> str:
         """특정 티커를 강제 청산(전량 매도)합니다."""
-        agent_name = "manager"
+        agent_name = self.manager.name
         ticker = params.get("ticker")
 
         if not ticker:
@@ -326,7 +328,7 @@ class CommandQueueHandler:
 
     def _execute_limit_sell(self, params: dict) -> str:
         """지정가 전량 매도를 실행합니다."""
-        agent_name = "manager"
+        agent_name = self.manager.name
         ticker = params.get("ticker")
         price = params.get("price")
 

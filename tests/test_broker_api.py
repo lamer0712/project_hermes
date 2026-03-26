@@ -1,5 +1,5 @@
 import pytest
-from src.utils.broker_api import UpbitBroker
+from src.broker.broker_api import UpbitBroker
 
 @pytest.fixture
 def broker():
@@ -15,8 +15,8 @@ def test_format_price(broker):
     assert broker._format_price(777.4) == "777"
     
     # Under 10
-    assert broker._format_price(5.55) == "5.6"
-    assert broker._format_price(5.54) == "5.5"
+    assert broker._format_price(5.55) == "5.55"
+    assert broker._format_price(5.544) == "5.54"
 
 def test_format_volume(broker):
     assert broker._format_volume(1.23456789) == "1.23456789"

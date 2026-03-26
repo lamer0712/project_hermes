@@ -97,7 +97,7 @@ class ExecutionManager:
                         # 여기서는 실제 체결된 만큼만 반영하거나, 취소된 나머지는 PM에 남겨둠.
                         # Upbit SELL IOC의 경우, 체결안된건 그냥 취소되므로 PM에서도 차감 안하는게 맞음.
                         # 단, record_sell은 '매도한 만큼'을 기록하는 것이므로 executed_volume이 맞음.
-                        self.portfolio_manager.record_sell(
+                        sold = self.portfolio_manager.record_sell(
                             agent_name=agent_name,
                             ticker=ticker,
                             volume=executed_volume,  # 실제 체결된 만큼만 기록
@@ -105,6 +105,15 @@ class ExecutionManager:
                             executed_funds=executed_funds,
                             paid_fee=paid_fee,
                         )
+                        # 매도 체결 알림 (PM에서 분리됨)
+                        if sold:
+                            avg_price = current_price  # fallback
+                            sell_revenue_net = executed_funds - paid_fee
+                            profit = sell_revenue_net - (avg_price * executed_volume)
+                            profit_ratio = (profit / (avg_price * executed_volume)) * 100 if avg_price * executed_volume > 0 else 0
+                            profit_emoji = "⏫" if profit > 0 else "⏬"
+                            msg = f"{profit_emoji} 매도: {ticker} 수량: {executed_volume:.3f}, 금액: {executed_funds:,.0f}, 수수료: {paid_fee:,.2f}"
+                            self.notifier.send_message(msg)
 
             elif state == "cancel":
                 logger.warning(

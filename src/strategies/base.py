@@ -71,13 +71,13 @@ class BaseStrategy(ABC):
     def is_downtrend(df):
         ema20 = df["ema_20"].iloc[-1]
         ema50 = df["ema_50"].iloc[-1]
+        ema60 = df["ma_60"].iloc[-1]
 
-        return ema20 < ema50
+        # 단순히 20 < 50이 아니라, 장기 이평선(60)까지 고려하여 더 확실한 하락일 때만 downtrend로 판정
+        return ema20 < ema50 and ema50 < ema60
 
     @staticmethod
     def is_fake_dip(df):
-        ema20 = df["ema_20"].iloc[-1]
-        ema50 = df["ema_50"].iloc[-1]
         vol = df["volume"].iloc[-1]
         vol_ma = df["volume_ma20"].iloc[-1]
         rsi_14 = df["rsi_14"]
@@ -85,24 +85,20 @@ class BaseStrategy(ABC):
         close = df["close"].iloc[-1]
         bb_lower = df["bb_lower"].iloc[-1]
 
-        # 1. 하락 추세
-        if ema20 < ema50:
-            return True, "하락 추세"
-
-        # 2. RSI 하락 지속 (최근 3개)
+        # 1. RSI 하락 지속 (최근 3개) - 여전히 칼날 잡기 방지 위해 유지
         if len(df) >= 3:
             if rsi_14.iloc[-1] < rsi_14.iloc[-2] < rsi_14.iloc[-3]:
                 return True, "RSI 하락 지속"
 
-        # 3. 거래량 부족
-        if vol < vol_ma * 0.8:
+        # 2. 거래량 너무 부족 (0.6배 미만으로 완화)
+        if vol < vol_ma * 0.6:
             return True, "거래량 부족"
 
-        # 4. 아직 덜 눌림 (BB 기준)
-        if close > bb_lower * 1.02:
+        # 3. 아직 덜 눌림 (BB 기준)
+        if close > bb_lower * 1.03:  # 1.02 -> 1.03으로 약간 완화
             return True, "아직 덜 눌림"
 
-        # 5. 음봉
+        # 54. 음봉
         if df["close"].iloc[-1] < df["open"].iloc[-1]:
             return True, "음봉"
 

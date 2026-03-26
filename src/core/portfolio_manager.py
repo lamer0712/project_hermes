@@ -3,7 +3,6 @@ import json
 import traceback
 from datetime import datetime
 from src.utils.markdown_io import write_markdown
-from src.communication.telegram_notifier import TelegramNotifier
 from src.utils.logger import logger
 from src.broker.broker_api import UpbitBroker
 from src.data.db import DatabaseManager
@@ -16,12 +15,16 @@ class PortfolioManager:
     상태 데이터 구조: {agent_name: {cash, holdings: {ticker: {volume, avg_price, total_cost}}, initial_capital}}
     """
 
+    # 이전 agent_name → 새 agent_name 매핑 (DB 마이그레이션용)
+    _AGENT_NAME_MIGRATION = {
+        "manager": "crypto_manager",
+    }
+
     def __init__(
         self, total_capital: float = 1000000, db_path: str = "data/portfolio.db"
     ):
         self.total_capital = total_capital
         self.portfolios = {}
-        self.notifier = TelegramNotifier()
         self.db = DatabaseManager(db_path)
         self.load_state()
 
@@ -30,8 +33,17 @@ class PortfolioManager:
         try:
             state = self.db.load_portfolio_state()
             if state:
-                # db.py는 total_capital을 별도 관리하지 않으므로 현금+자산 가치로 추산해볼 수 있으나
-                # 편의상 기존 portfolios 구조만 병합
+                # DB 마이그레이션: 이전 agent_name을 새 이름으로 자동 매핑
+                migrated_state = {}
+                for agent_name, pb in state.items():
+                    new_name = self._AGENT_NAME_MIGRATION.get(agent_name, agent_name)
+                    if new_name != agent_name:
+                        logger.info(f"[Manager] DB 마이그레이션: '{agent_name}' → '{new_name}'")
+                        # DB에서도 이름 갱신
+                        self.db.rename_agent(agent_name, new_name)
+                    migrated_state[new_name] = pb
+                state = migrated_state
+
                 for agent_name, pb in state.items():
                     if agent_name not in self.portfolios:
                         self.portfolios[agent_name] = {
@@ -299,7 +311,6 @@ class PortfolioManager:
         profit_emoji = "⏫" if profit > 0 else "⏬"
         msg = f"{profit_emoji} 매도: {ticker} 거래수량: {volume:.3f}, 단가: {price:,.1f}, 거래금액: {sell_revenue_gross:,.0f}, 수수료: {paid_fee:,.2f}, 정산금액: {sell_revenue_net:,.0f}, 손익: {profit:+,.0f}({profit_ratio:+.2f}%), 평단가: {avg_price:,.1f}, 고가: {max_price:,.1f}"
         logger.info(msg)
-        self.notifier.send_message(msg)
         return True
 
     def set_halt(self, agent_name: str, status: bool) -> bool:
@@ -327,9 +338,6 @@ class PortfolioManager:
             logger.info(
                 "[PortfolioManager] DB의 trade_history 전체 기록을 초기화했습니다."
             )
-            self.notifier.send_message(
-                "🧹 *포트폴리오 과거 거래 내역(trade_history)이 초기화되었습니다.*"
-            )
             return True
         except Exception as e:
             logger.error(f"[PortfolioManager] trade_history 삭제 실패: {e}")
@@ -341,9 +349,6 @@ class PortfolioManager:
             self.db.delete_old_trade_history(days)
             logger.info(
                 f"[PortfolioManager] {days}일 지난 과거 거래 내역을 정리했습니다."
-            )
-            self.notifier.send_message(
-                f"🧹 *[Daily Sync] {days}일 이상 경과된 과거 거래 내역이 자동 삭제되었습니다.*"
             )
             return True
         except Exception as e:
@@ -506,7 +511,7 @@ class PortfolioManager:
         portfolio_path = f"manager/portfolio.md"
         write_markdown(portfolio_path, md)
 
-    def synchronize_balances(self, manager) -> str:
+    def synchronize_balances(self, agent_name: str) -> str:
         """업비트 실잔고 기반 포트폴리오 100% 동기화 및 재배분 실행"""
         logger.info("[System] 🔄 업비트 실잔고 기반 포트폴리오 동기화 실행 중...")
 
@@ -550,11 +555,10 @@ class PortfolioManager:
             total_coin_cost = sum(v["total_cost"] for v in coin_holdings.values())
             true_total_capital = total_cash + total_coin_cost
 
-            if not manager:
-                return "❌ 동기화 실패: 매니저가 없습니다."
+            if not agent_name:
+                return "❌ 동기화 실패: 에이전트 이름이 필요합니다."
 
             target_capital_per_agent = true_total_capital
-            agent_name = manager.name
 
             self.portfolios[agent_name] = {
                 "cash": 0.0,
