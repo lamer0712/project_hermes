@@ -24,15 +24,15 @@ class MeanReversionStrategy(BaseStrategy):
             "regime": "ranging",
             "setup": {
                 "timeframe": "1h",
-                "rsi_threshold": 45,
-                "bb_position_threshold": 0.2,
+                "rsi_threshold": 48,
+                "bb_position_threshold": 0.25,
             },
             "entry": {
                 "timeframe": "15m",
-                "rsi_threshold": 30,
-                "bb_lower_threshold": 0.1,
-                "volume_multiplier": 1.5,
-                "panic_drop_pct": -0.05,
+                "rsi_threshold": 33,
+                "bb_lower_threshold": 0.12,
+                "volume_multiplier": 1.3,
+                "panic_drop_pct": -0.04,
             },
             "exit": {
                 "rsi_threshold": 70,

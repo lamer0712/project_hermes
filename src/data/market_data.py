@@ -105,45 +105,50 @@ class UpbitMarketData(BaseMarketData):
         rsi = df.rsi_14.iloc[-1]
         adx = df.adx_14.iloc[-1]
 
-        high20 = df.high_20.iloc[-1]
-        low20 = df.low_20.iloc[-1]
 
-        ema_now = df.ema_20.iloc[-1]
-        ema_prev = df.ema_20.iloc[-10]
+        atr = df.atr_14.iloc[-1]
+        volatility = atr / price
+        vol_mean = df.atr_14.rolling(50).mean().iloc[-1] / price
 
-        volatility = (high20 - low20) / price
-        trend_strength = abs(ma20 - ma60) / ma60
-        ema_slope = (ema_now - ema_prev) / ema_prev
+        volume = df.volume.iloc[-1]
+        volume_mean = df.volume.rolling(20).mean().iloc[-1]
 
-        # 1. Panic
+        drop = df.close.pct_change(3).iloc[-1]
+
+        trend_strength = (ma20 - ma60) / ma60
+        ema_slope = df.ema_20.pct_change(5).iloc[-1]
+
+
+        # 1. Panic (event)
         if (
-            rsi < 35
-            and ema_slope < -0.01
-            and volatility > 0.06
-            and adx > 20
-            and price < low20 * 1.02
+            drop < -0.05
+            and volume > volume_mean * 1.5
+            and rsi < 40
+            and ema_slope < 0
+            and trend_strength < 0
         ):
             return "panic"
 
-        # 2. Volatile (진짜 랜덤)
-        if volatility > 0.05 and trend_strength < 0.015 and adx < 20:
-            return "volatile"
-
-        # 3. Early Bull (핵심 추가)
-        if ma20 > ma60 and ema_slope > 0 and adx > 18:
+        # 2. Strong trends
+        if trend_strength > 0.025 and adx > 25 and ema_slope > 0:
             return "bullish"
 
-        # 4. Strong Bull
-        if ma20 > ma60 * 1.005 and rsi > 55 and adx > 22:
-            return "bullish"
-
-        # 5. Bearish
-        if ma20 < ma60 * 0.995 and rsi < 45 and ema_slope < 0 and adx > 20:
+        if trend_strength < -0.025 and adx > 25 and ema_slope < 0:
             return "bearish"
 
-        # 6. Ranging (명확 정의)
-        if trend_strength < 0.01 and adx < 18:
-            return "ranging"
+        # 3. Weak trends
+        if trend_strength > 0.012 and ema_slope > 0:
+            return "bullish"
+
+        if trend_strength < -0.012 and ema_slope < 0:
+            return "bearish"
+
+        # 4. Range / Volatility
+        if adx < 20 and abs(trend_strength) < 0.01:
+            if volatility > vol_mean * 1.3:
+                return "volatile"
+            else:
+                return "ranging"
 
         return "neutral"
 

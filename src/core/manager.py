@@ -8,7 +8,7 @@ from src.core.risk_manager import RiskManager
 from src.communication.telegram_notifier import TelegramNotifier
 from src.core.execution_manager import ExecutionManager
 from src.core.models import TickerEvaluation, CycleContext
-
+from src.strategies.base import Signal, SignalType
 
 class ManagerAgent:
     """
@@ -32,6 +32,7 @@ class ManagerAgent:
         "bullish": ["Breakout", "PullbackTrend"],
         "ranging": ["VWAPReversion", "MeanReversion"],
         "volatile": ["Breakout", "VWAPReversion"],
+        # "neutral": ["VWAPReversion", "MeanReversion"],
         # "bearish": ["Bearish"],
         # "panic": ["Panic"],
     }
@@ -268,7 +269,6 @@ class ManagerAgent:
             # SELL 시그널은 즉시 실행
             if evaluation.signal_type == "SELL" and is_held:
                 # 원본 signal 객체를 재구성
-                from src.strategies.base import Signal, SignalType
 
                 signal = Signal(
                     type=SignalType.SELL,
@@ -293,8 +293,6 @@ class ManagerAgent:
                     continue
                 if is_held:
                     continue
-
-                from src.strategies.base import Signal, SignalType
 
                 signal = Signal(
                     type=SignalType.BUY,
