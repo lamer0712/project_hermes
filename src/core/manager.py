@@ -1,22 +1,49 @@
 import time
 from src.broker.broker_api import UpbitBroker
+from src.data.market_data import UpbitMarketData
 from src.strategies.base import SignalType
 from src.utils.logger import logger
 from src.strategies.strategy_manager import StrategyManager
 from src.core.risk_manager import RiskManager
 from src.communication.telegram_notifier import TelegramNotifier
 from src.core.execution_manager import ExecutionManager
+from src.core.models import TickerEvaluation, CycleContext
 
 
 class ManagerAgent:
+    """
+    투자 사이클을 관리하는 에이전트.
+
+    execute_cycle()을 통해 한 사이클을 실행하며,
+    내부적으로 아래 파이프라인 단계를 순차 실행합니다:
+      1. _build_cycle_context     — 보유현황·현금·현재가 수집
+      2. _evaluate_and_execute_sells — 리스크+전략 평가 → 즉시 매도 + 매수 후보 수집
+      3. _select_and_execute_buy  — 최적 매수 1건 실행
+      4. _finalize_cycle          — 대기주문 확인 + 리포트 + 저장
+    """
+
+    # 업비트 최소 주문 금액
+    MIN_ORDER_AMOUNT = 5000
+    MAX_POSITION_RATIO = 0.3
+    MAX_POSITIONS = 5
+
+    # 시장 Regime에 따른 전략 매핑
+    STRATEGY_MAP = {
+        "bullish": ["Breakout", "PullbackTrend"],
+        "ranging": ["VWAPReversion", "MeanReversion"],
+        "volatile": ["Breakout", "VWAPReversion"],
+        # "bearish": ["Bearish"],
+        # "panic": ["Panic"],
+    }
+
     def __init__(
         self,
-        name: str = "manager",
+        name: str = "crypto_manager",
         portfolio_manager=None,
     ):
         self.name = name
         self.portfolio_manager = portfolio_manager
-        self.agent_dir = f"manager"
+        self.agent_dir = f"manager/{self.name}"
         self.broker = UpbitBroker()
         self.strategy_manager = StrategyManager()
         self.risk_manager = RiskManager(self.portfolio_manager)
@@ -25,22 +52,12 @@ class ManagerAgent:
             self.broker, self.portfolio_manager, self.notifier
         )
 
-        # 시장 Regime에 따른 매핑 (기본값)
-        self.strategy_map = {
-            "bullish": ["Breakout", "PullbackTrend"],
-            "ranging": ["VWAPReversion", "MeanReversion"],
-            "volatile": ["Breakout", "VWAPReversion"],
-            # "bearish": ["Bearish"],
-            # "panic": ["Panic"],
-        }
-
         # 마지막 싸이클의 종목별 평가 결과 저장
         self.last_ticker_stats = {}
 
-    # 업비트 최소 주문 금액
-    MIN_ORDER_AMOUNT = 5000
-    MAX_POSITION_RATIO = 0.3
-    MAX_POSITIONS = 5
+    # ──────────────────────────────────────────────
+    # 메인 사이클
+    # ──────────────────────────────────────────────
 
     def execute_cycle(
         self,
@@ -56,6 +73,7 @@ class ManagerAgent:
         self.notifier.start_buffering()
         self.notifier.send_message("[log]")
         self.execution_manager.check_pending_orders()
+
         if not setup_market_data or not entry_market_data:
             self.notifier.flush_buffer()
             return
@@ -65,20 +83,35 @@ class ManagerAgent:
             self.notifier.flush_buffer()
             return
 
-        # 거시 시장 매수 필터 (하락/패닉일 경우 신규 매수 차단)
+        # 1. 컨텍스트 구성
+        ctx = self._build_cycle_context(entry_market_data, market_regime)
+
+        # 2. 종목별 평가 + 매도 실행 + 매수 후보 수집
+        self._evaluate_and_execute_sells(ctx, setup_market_data, entry_market_data)
+
+        # 3. 최적 매수 1건 실행
+        self._select_and_execute_buy(ctx)
+
+        # 4. 마무리 (대기주문 확인 + 리포트 + 저장)
+        self._finalize_cycle(ctx, market_regime)
+
+    # ──────────────────────────────────────────────
+    # 파이프라인 단계
+    # ──────────────────────────────────────────────
+
+    def _build_cycle_context(
+        self, entry_market_data: dict, market_regime: str
+    ) -> CycleContext:
+        """보유현황·현금·현재가를 수집하여 CycleContext를 구성합니다."""
         buy_filter_passed = market_regime not in ["bearish", "panic"]
         if not buy_filter_passed:
             logger.info(
                 f"⚠️ 거시 시장 침체({market_regime}): 신규 매수 차단, 매도만 수행합니다."
             )
 
-        buy_candidates = []
-
-        portfolio_info = None
-        current_prices = {}
         if self.portfolio_manager:
-            # 보유 종목들의 현재가를 수집하기 위함
             holdings = self.portfolio_manager.get_holdings(self.name)
+            current_prices = {}
             for ticker in holdings:
                 if ticker in entry_market_data:
                     current_prices[ticker] = float(
@@ -89,130 +122,197 @@ class ManagerAgent:
                 self.name, current_prices=current_prices
             )
             available_cash = self.portfolio_manager.get_available_cash(self.name)
-            holdings = self.portfolio_manager.get_holdings(self.name)
         else:
-            available_cash = float("inf")
             holdings = {}
+            current_prices = {}
+            portfolio_info = None
+            available_cash = float("inf")
 
-        ticker_stats = {}
-        for ticker, market_data in entry_market_data.items():
-            current_price = float(market_data.close.iloc[-1])
-            is_held = ticker in holdings and holdings[ticker]["volume"] > 0
+        return CycleContext(
+            agent_name=self.name,
+            market_regime=market_regime,
+            buy_filter_passed=buy_filter_passed,
+            available_cash=available_cash,
+            holdings=holdings,
+            portfolio_info=portfolio_info,
+            current_prices=current_prices,
+        )
 
-            # 매도 판단 전에 전역 손절/익절/트레일링 스탑 검사 우선
-            if is_held:
-                risk_signal = self.risk_manager.evaluate_risk(
-                    self.name, ticker, current_price
+    def _evaluate_ticker(
+        self,
+        ctx: CycleContext,
+        ticker: str,
+        setup_df,
+        entry_df,
+    ) -> TickerEvaluation:
+        """
+        단일 종목에 대해 리스크 평가 → 전략 평가를 수행합니다.
+        리스크 시그널이 발생하면 즉시 매도를 실행하고 결과를 반환합니다.
+        """
+        current_price = float(entry_df.close.iloc[-1])
+        is_held = ticker in ctx.holdings and ctx.holdings[ticker]["volume"] > 0
+
+        # ── 리스크 매니저 우선 평가 ──
+        if is_held:
+            risk_signal = self.risk_manager.evaluate_risk(
+                self.name, ticker, current_price
+            )
+            if risk_signal:
+                risk_signal_str = risk_signal.__str__()
+                log = f"⚡[Risk Manager]\n{risk_signal_str}"
+                logger.warning(log)
+                self.execution_manager.execute_sell(
+                    self.name, ticker, current_price, risk_signal
                 )
-                if risk_signal:
-                    risk_signal_str = risk_signal.__str__()
-                    log = f"⚡[Risk Manager]\n{risk_signal_str}"
-                    logger.warning(log)
-                    # self.notifier.send_message(log)
-                    self.execution_manager.execute_sell(
-                        self.name, ticker, current_price, risk_signal
-                    )
-                    continue
+                return TickerEvaluation(
+                    ticker=ticker,
+                    regime=None,
+                    strategy="RiskManager",
+                    signal_type="SELL",
+                    signal_reason=risk_signal.reason,
+                    signal_strength=risk_signal.strength,
+                    signal_confidence=risk_signal.confidence,
+                    current_price=current_price,
+                )
 
-            # 종목별 Regime 판독 및 전략 할당
-            ticker_regime = None
-            if market_data is not None and not market_data.empty:
-                try:
-                    ticker_regime = self.broker.regime_detect(ticker, market_data)
-                except Exception as e:
-                    print(ticker, e)
+        # ── 종목별 Regime 판독 ──
+        ticker_regime = None
+        if entry_df is not None and not entry_df.empty:
+            try:
+                ticker_regime = UpbitMarketData.regime_detect(ticker, entry_df)
+            except Exception as e:
+                print(ticker, e)
 
-            target_strategy_names = None
-            if is_held:
-                saved_strategy = holdings[ticker].get("strategy")
-                if saved_strategy and saved_strategy != "Unknown":
-                    target_strategy_names = [saved_strategy]
+        # ── 전략 선택 ──
+        target_strategy_names = None
+        if is_held:
+            saved_strategy = ctx.holdings[ticker].get("strategy")
+            if saved_strategy and saved_strategy != "Unknown":
+                target_strategy_names = [saved_strategy]
 
-            if target_strategy_names is None:
-                target_strategy_names = self.strategy_map.get(ticker_regime, None)
+        if target_strategy_names is None:
+            target_strategy_names = self.STRATEGY_MAP.get(ticker_regime, None)
 
-            if target_strategy_names is None:
-                ticker_stats[ticker] = {
-                    "ticker": ticker,
-                    "regime": ticker_regime,
-                    "strategy": "N/A",
-                    "signal_type": "HOLD",
-                    "signal_reason": "N/A",
-                    "signal_strength": 0,
-                    "signal_confidence": -1,
-                    "current_price": current_price,
+        if target_strategy_names is None:
+            return TickerEvaluation(
+                ticker=ticker,
+                regime=ticker_regime,
+                strategy="N/A",
+                signal_type="HOLD",
+                signal_reason="N/A",
+                signal_strength=0,
+                signal_confidence=-1,
+                current_price=current_price,
+            )
+
+        # ── 전략 평가 (최고 confidence 선택) ──
+        signal = None
+        strategy = None
+        for strategy_name in target_strategy_names:
+            # volatile regime에서 Breakout은 거래량 조건 강화
+            override_params = None
+            if ticker_regime == "volatile" and strategy_name == "Breakout":
+                override_params = {
+                    "entry": {
+                        "timeframe": "15m",
+                        "volume_multiplier": 1.8,
+                        "breakout_buffer": 0.002,
+                    }
                 }
+            strategy_tmp = self.strategy_manager.get_strategy(
+                strategy_name, override_params
+            )
+
+            signal_tmp = strategy_tmp.evaluate(
+                ticker,
+                setup_df,
+                entry_df,
+                ctx.portfolio_info,
+            )
+
+            if signal is None or signal_tmp.confidence > signal.confidence:
+                signal = signal_tmp
+                strategy = strategy_tmp
+
+        return TickerEvaluation(
+            ticker=ticker,
+            regime=ticker_regime,
+            strategy=strategy.name,
+            signal_type=signal.type.value if signal else "HOLD",
+            signal_reason=signal.reason if signal else "N/A",
+            signal_strength=signal.strength if signal else 0,
+            signal_confidence=signal.confidence if signal else 0,
+            current_price=current_price,
+        )
+
+    def _evaluate_and_execute_sells(
+        self,
+        ctx: CycleContext,
+        setup_market_data: dict,
+        entry_market_data: dict,
+    ) -> None:
+        """모든 종목에 대해 평가를 수행하고, SELL 시그널은 즉시 실행, BUY는 후보에 수집합니다."""
+        for ticker, entry_df in entry_market_data.items():
+            setup_df = setup_market_data.get(ticker)
+
+            evaluation = self._evaluate_ticker(ctx, ticker, setup_df, entry_df)
+            ctx.ticker_stats[ticker] = evaluation
+
+            # 리스크 매니저가 이미 처리한 경우 스킵
+            if evaluation.strategy == "RiskManager":
                 continue
 
-            signal = None
-            strategy = None
-            for strategy_name in target_strategy_names:
-                # volatile regime에서 Breakout은 거래량 조건 강화 (1.3x → 1.8x)
-                override_params = None
-                if ticker_regime == "volatile" and strategy_name == "Breakout":
-                    override_params = {
-                        "entry": {
-                            "timeframe": "15m",
-                            "volume_multiplier": 1.8,
-                            "breakout_buffer": 0.002,
-                        }
-                    }
-                strategy_tmp = self.strategy_manager.get_strategy(
-                    strategy_name, override_params
+            current_price = evaluation.current_price
+            is_held = ticker in ctx.holdings and ctx.holdings[ticker]["volume"] > 0
+
+            # SELL 시그널은 즉시 실행
+            if evaluation.signal_type == "SELL" and is_held:
+                # 원본 signal 객체를 재구성
+                from src.strategies.base import Signal, SignalType
+
+                signal = Signal(
+                    type=SignalType.SELL,
+                    ticker=ticker,
+                    reason=evaluation.signal_reason,
+                    strength=evaluation.signal_strength,
+                    confidence=evaluation.signal_confidence,
+                )
+                sig_str = signal.__str__()
+                self.notifier.send_message(
+                    f" - Strategy : {evaluation.strategy}\n\t{sig_str}"
+                )
+                self.execution_manager.execute_sell(
+                    self.name, ticker, current_price, signal
                 )
 
-                signal_tmp = strategy_tmp.evaluate(
-                    ticker,
-                    setup_market_data.get(ticker),
-                    market_data,
-                    portfolio_info,
+            # BUY 시그널은 후보로 수집
+            elif evaluation.signal_type == "BUY":
+                if not ctx.buy_filter_passed:
+                    continue
+                if ctx.available_cash < self.MIN_ORDER_AMOUNT:
+                    continue
+                if is_held:
+                    continue
+
+                from src.strategies.base import Signal, SignalType
+
+                signal = Signal(
+                    type=SignalType.BUY,
+                    ticker=ticker,
+                    reason=evaluation.signal_reason,
+                    strength=evaluation.signal_strength,
+                    confidence=evaluation.signal_confidence,
                 )
+                # 전략을 다시 로드 (매수 실행에 필요)
+                strategy = self.strategy_manager.get_strategy(evaluation.strategy)
+                ctx.buy_candidates.append((signal, strategy, entry_df))
 
-                if signal is None or signal_tmp.confidence > signal.confidence:
-                    signal = signal_tmp
-                    strategy = strategy_tmp
+    def _select_and_execute_buy(self, ctx: CycleContext) -> None:
+        """수집된 매수 후보 중 최적 1건을 실행합니다."""
+        # confidence 기준 내림차순 정렬
+        ctx.buy_candidates.sort(key=lambda x: x[0].confidence, reverse=True)
 
-            # 통계 수집
-            ticker_stats[ticker] = {
-                "ticker": ticker,
-                "regime": ticker_regime,
-                "strategy": strategy.name,
-                "signal_type": signal.type.value if signal else "HOLD",
-                "signal_reason": signal.reason if signal else "N/A",
-                "signal_strength": signal.strength if signal else 0,
-                "signal_confidence": signal.confidence if signal else 0,
-                "current_price": current_price,
-            }
-
-            # SELL 시그널은 즉시 실행 (보유 종목만)
-            if signal and signal.type == SignalType.SELL:
-                if is_held:
-                    sig_str = signal.__str__()
-                    self.notifier.send_message(
-                        f" - Stretegy : {strategy.name}\n\t{sig_str}"
-                    )
-                    self.execution_manager.execute_sell(
-                        self.name, ticker, current_price, signal
-                    )
-
-            # BUY 시그널은 후보로 수집 (가장 강한 것만 나중에 실행)
-            elif signal and signal.type == SignalType.BUY:
-                if not buy_filter_passed:
-                    continue
-                # 현금 부족이면 스킵
-                if available_cash < self.MIN_ORDER_AMOUNT:
-                    continue
-                # 이미 보유 중이면 스킵
-                if is_held:
-                    continue
-                # 통과한 시그널을 후보 리스트에 수집
-                buy_candidates.append((signal, strategy, market_data))
-
-        # 후보들을 confidence 기준 내림차순 정렬
-        buy_candidates.sort(key=lambda x: x[0].confidence, reverse=True)
-
-        # 가장 강한 매수 시그널부터 순차 실행 시도 (1개 체결/접수 성공 시 즉시 루프 탈출)
-        for cand_signal, cand_strategy, cand_market_data in buy_candidates:
+        for cand_signal, cand_strategy, cand_market_data in ctx.buy_candidates:
             if cand_signal.confidence <= 0.3:
                 break
 
@@ -225,7 +325,7 @@ class ManagerAgent:
             )
 
             sig_str = cand_signal.__str__()
-            log = f" - Stretegy : {cand_strategy.name}\n\t{sig_str}"
+            log = f" - Strategy : {cand_strategy.name}\n\t{sig_str}"
             logger.info(log)
             self.notifier.send_message(log)
 
@@ -239,26 +339,27 @@ class ManagerAgent:
                 strategy_name=cand_strategy.name,
             )
 
-            # 성공 시 루프 중단 (단일 종목 매매)
             if success:
                 logger.info(
                     f"[ManagerAgent] {ticker} 매수 접수 성공. 후순위 매수 후보 기각."
                 )
                 break
 
+    def _finalize_cycle(self, ctx: CycleContext, market_regime: str) -> None:
+        """대기주문 확인, 리포트 전송, 포트폴리오 상태 저장을 수행합니다."""
+        # dict 변환 (기존 호환)
+        ticker_stats = {t: ev.to_dict() for t, ev in ctx.ticker_stats.items()}
+
         # /eval 조회 등을 위해 최근 평가결과를 저장
         self.last_ticker_stats = ticker_stats
 
-        # 이번 사이클 내에서 방금 발주한 거래가 체결 완료됐는지 0.5초 대기 후 마지막 확인
-        import time
-
+        # 대기 주문 최종 확인
         time.sleep(0.5)
         self.execution_manager.check_pending_orders()
 
         # 리포트 전송
         try:
             self._send_cycle_report(market_regime, ticker_stats)
-            # 포트폴리오 상태 파일(portfolio.md) 업데이트
             if self.portfolio_manager:
                 current_prices = {
                     t: s["current_price"] for t, s in ticker_stats.items()
@@ -270,6 +371,10 @@ class ManagerAgent:
             logger.error(f"Failed to send cycle report or export portfolio: {e}")
 
         self.notifier.flush_buffer()
+
+    # ──────────────────────────────────────────────
+    # 리포트
+    # ──────────────────────────────────────────────
 
     def _send_cycle_report(self, market_regime: str, ticker_stats: dict) -> None:
         """
@@ -311,14 +416,13 @@ class ManagerAgent:
         # 3. 전략별 코인 사항 (Regime, Signal)
         if ticker_stats:
             msg += "⚙️ **전략별 모니터링 (주요)**\n"
-            # 시그널이 발생한 종목(BUY/SELL) 우선, 그 다음은 확신도순
             sorted_stats = sorted(
                 ticker_stats.values(),
                 key=lambda x: (x["signal_type"] != "HOLD", x["signal_confidence"]),
                 reverse=True,
             )
 
-            for stat in sorted_stats[:3]:  # 상위 3개만
+            for stat in sorted_stats[:3]:
                 t = stat["ticker"]
                 r = stat["regime"]
                 s = stat["strategy"]
@@ -353,6 +457,10 @@ class ManagerAgent:
 
         self.notifier.send_message(msg)
 
+    # ──────────────────────────────────────────────
+    # 실시간 틱 처리
+    # ──────────────────────────────────────────────
+
     def handle_realtime_tick(self, ticker: str, current_price: float) -> None:
         """웹소켓에서 수신한 실시간 틱 데이터를 바탕으로 긴급 손절/익절을 검사합니다."""
         self.execution_manager.check_pending_orders()
@@ -368,7 +476,6 @@ class ManagerAgent:
             risk_signal_str = risk_signal.__str__()
             log = f"⚡[Realtime Risk Hook]\n{risk_signal_str}"
             logger.warning(log)
-            # self.notifier.send_message(log)
             self.execution_manager.execute_sell(
                 self.name, ticker, current_price, risk_signal
             )

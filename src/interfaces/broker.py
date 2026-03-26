@@ -9,34 +9,6 @@ class BaseBroker(ABC):
         """API 키 등이 정상적으로 설정되어 있는지 확인합니다."""
         pass
 
-    @property
-    @abstractmethod
-    def blacklisted_markets(self) -> set:
-        """현재 마켓 데이터 조회 실패로 등록된 블랙리스트 마켓 상태를 반환합니다."""
-        pass
-
-    @abstractmethod
-    def get_dynamic_target_coins(self, top_n: int = 10) -> list[str]:
-        """시장 데이터를 기반으로 타겟 코인(또는 종목)을 동적으로 선정합니다."""
-        pass
-
-    @abstractmethod
-    def get_ohlcv_with_indicators_new(self, ticker: str, count: int = 100, interval: str = "minutes/60"):
-        pass
-
-    @abstractmethod
-    def get_multiple_ohlcv_with_indicators(self, tickers: list[str], count: int = 100, interval: str = "minutes/60") -> dict:
-        pass
-
-    @abstractmethod
-    def regime_detect(self, ticker: str, df) -> str:
-        pass
-
-    @abstractmethod
-    def market_regime(self) -> str:
-        """자산군(가상화폐, KOSPI 등) 전체의 현 시장 체제를 반환(예: btc_regime 대체)"""
-        pass
-
     @abstractmethod
     def place_order(
         self,

@@ -5,7 +5,6 @@ import uuid
 import hashlib
 from urllib.parse import urlencode
 from src.utils.logger import logger
-from src.data.market_data import UpbitMarketData
 from decimal import Decimal, ROUND_HALF_UP
 from src.interfaces.broker import BaseBroker
 
@@ -23,41 +22,6 @@ class UpbitBroker(BaseBroker):
     def is_configured(self) -> bool:
         """API 키가 정상적으로 설정되어 있는지 확인합니다."""
         return bool(self.access_key and self.secret_key)
-
-    # ==========================================
-    # Market Data 분리/캡슐화 영역
-    # ==========================================
-
-    @property
-    def blacklisted_markets(self) -> set:
-        """현재 마켓 데이터 조회 실패로 등록된 블랙리스트 마켓 반환"""
-        return UpbitMarketData._blacklisted_markets
-
-    def get_dynamic_target_coins(self, top_n: int = 10) -> list[str]:
-        """UpbitMarketData를 통해 시장 데이터를 기반으로 타겟 코인을 동적으로 선정합니다."""
-        return UpbitMarketData.get_dynamic_target_coins(top_n=top_n)
-
-    def get_ohlcv_with_indicators_new(
-        self, ticker: str, count: int = 100, interval: str = "minutes/60"
-    ):
-        """UpbitMarketData를 통해 DataFrame 포맷의 고급 시장 데이터를 제공합니다."""
-        return UpbitMarketData.get_ohlcv_with_indicators_new(ticker, count, interval)
-
-    def get_multiple_ohlcv_with_indicators(
-        self, tickers: list[str], count: int = 100, interval: str = "minutes/60"
-    ) -> dict:
-        """선정된 다수 코인의 지표를 병렬로 수집하여 반환합니다."""
-        return UpbitMarketData.get_multiple_ohlcv_with_indicators(
-            tickers, count, interval
-        )
-
-    def regime_detect(self, ticker: str, df) -> str:
-        """UpbitMarketData의 regime 판독 로직을 래핑하여 제공합니다."""
-        return UpbitMarketData.regime_detect(ticker, df)
-
-    def market_regime(self) -> str:
-        """UpbitMarketData의 regime 판독 로직을 래핑하여 제공합니다."""
-        return UpbitMarketData.market_regime()
 
     # ==========================================
     # 기존 Broker 고유 영역 (매매 로직 등)

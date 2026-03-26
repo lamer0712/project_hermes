@@ -194,6 +194,28 @@ class DatabaseManager:
                     }
         return state
 
+    def rename_agent(self, old_name: str, new_name: str):
+        """에이전트 이름을 변경합니다 (DB 마이그레이션용)."""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            # 새 이름이 이미 존재하면 오래된 것을 삭제
+            cursor.execute('DELETE FROM portfolios WHERE agent_name = ?', (new_name,))
+            cursor.execute('DELETE FROM holdings WHERE agent_name = ?', (new_name,))
+            # 이름 변경
+            cursor.execute(
+                'UPDATE portfolios SET agent_name = ? WHERE agent_name = ?',
+                (new_name, old_name)
+            )
+            cursor.execute(
+                'UPDATE holdings SET agent_name = ? WHERE agent_name = ?',
+                (new_name, old_name)
+            )
+            cursor.execute(
+                'UPDATE trade_history SET agent_name = ? WHERE agent_name = ?',
+                (new_name, old_name)
+            )
+            logger.info(f"[DB] 에이전트 이름 변경: '{old_name}' → '{new_name}'")
+
     def delete_portfolio(self, agent_name: str):
         """에이전트 정보와 보유 종목을 DB에서 완전히 삭제"""
         with self.get_connection() as conn:
