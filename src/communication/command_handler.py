@@ -210,7 +210,7 @@ class CommandQueueHandler:
 
             msg += f"\n📦 *보유 포지션 상세 현황*\n"
             msg += f"• 매수 전략: {buy_strategy}({r})\n"
-            msg += f"• 매수 이유: {sr}, score({sc:.1%})\n"
+            msg += f"• 매수 이유: {sr}, score({sc:.1})\n"
             msg += f"• 매수 금액: {h['volume'] * avg_price:,.0f}원\n"
             msg += f"• 현재 평가 금액: {h['volume'] * current_price:,.0f}원\n"
             msg += f"• 평단 수익률: {profit_pct:+.2f}% (평단가: {avg_price:,.2f}원)\n"
