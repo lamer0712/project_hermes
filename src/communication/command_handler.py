@@ -184,6 +184,7 @@ class CommandQueueHandler:
         current_price = stat.get("current_price", 0)
 
         msg = f"⚙️ *티커 상세 현황*\n"
+        msg += f"[차트 바로가기](https://upbit.com/exchange?code=CRIX.UPBIT.{t})\n"
         msg += f"• {t}\[{r.capitalize()}] : {s} {st} {sc:.1f}\n  └ {sr}\n"
 
         holdings = self.pm.get_holdings(self.manager.name)
