@@ -390,7 +390,7 @@ class ManagerAgent:
             return
 
         # 1. Market Regime & 기본 자산 정보
-        msg = f"📊 **Hermes Investment Report**\n"
+        msg = f"📊 **Investment Report**\n"
         msg += f"🌐 Market Regime: {market_regime.upper()}\n"
         msg += f"💰 총 자산: {summary['total_value']:,.0f} KRW\n"
         msg += f"💵 현금 자산: {summary['cash']:,.0f} KRW ({summary['return_rate']:+.2f}%)\n\n"
@@ -431,37 +431,15 @@ class ManagerAgent:
             selected_stats = top_buys
 
         if ticker_stats and selected_stats:
-            msg += "⚙️ **전략별 모니터링**\n"
+            msg += "⚙️ **티커별 모니터링**\n"
             for stat in selected_stats[:3]:
                 t = stat["ticker"]
                 r = stat["regime"]
                 s = stat["strategy"]
                 st = stat["signal_type"]
                 sr = stat["signal_reason"]
-                ss = stat["signal_strength"]
                 sc = stat["signal_confidence"]
-                if st == "HOLD":
-                    msg += f"• {t} [{r}]: {s} → {st} 점수:{sc:.0}\n  └ {sr}\n"
-                else:
-                    msg += f"• {t} [{r}]: {s} → {st} 점수:{sc:.0} 비중:{ss:.0%}\n  └ {sr}\n"
-
-        # # 4. 추가 추천 내용
-        # msg += "💡 **AI 추천 & 인사이트**\n"
-        # if market_regime in ["bearish", "panic"]:
-        #     msg += (
-        #         "⚠️ 시장이 침체기입니다. 현금 비중을 유지하며 보수적으로 접근하세요.\n"
-        #     )
-        # elif market_regime == "bullish":
-        #     msg += "🚀 시장이 강세입니다. 추세 추종 전략이 유효할 가능성이 큽니다.\n"
-        # else:
-        #     msg += (
-        #         "⏸️ 시장이 횡보 중입니다. 박스권 매매나 돌파를 기다리는 것이 좋습니다.\n"
-        #     )
-
-        # 가장 높은 확신도의 매수 시그널 추천
-
-        # if top_buys:
-        #     msg += f"🎯 관심 종목: {top_buys[0]['ticker']} (확신도: {top_buys[0]['signal_confidence']:.0%})\n"
+                msg += f"• {t}[{r.capitalize()}]: {s}[{st},{sc:.0}]\n  └ {sr}\n"
 
         self.notifier.send_message(msg)
 
