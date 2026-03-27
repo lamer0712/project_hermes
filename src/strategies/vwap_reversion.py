@@ -107,7 +107,7 @@ class VWAPReversionStrategy(BaseStrategy):
                 return Signal(
                     SignalType.HOLD,
                     ticker,
-                    f"진입대기 - 가짜 눌림목: {reason}, 점수: {score:.1%}",
+                    f"진입대기 - 가짜 눌림목: {reason}",
                     0,
                     score,
                 )
@@ -132,7 +132,7 @@ class VWAPReversionStrategy(BaseStrategy):
         return Signal(
             SignalType.HOLD,
             ticker,
-            f"진입대기 - VWAP 이격: {distance_to_vwap*100:.1f}%, 점수: {score:.1f}",
+            f"진입대기 - VWAP 이격: {distance_to_vwap*100:.1f}%",
             0,
             score,
         )
