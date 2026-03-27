@@ -105,7 +105,6 @@ class UpbitMarketData(BaseMarketData):
         rsi = df.rsi_14.iloc[-1]
         adx = df.adx_14.iloc[-1]
 
-
         atr = df.atr_14.iloc[-1]
         volatility = atr / price
         vol_mean = df.atr_14.rolling(50).mean().iloc[-1] / price
@@ -118,7 +117,6 @@ class UpbitMarketData(BaseMarketData):
         trend_strength = (ma20 - ma60) / ma60
         ema_slope = df.ema_20.pct_change(5).iloc[-1]
 
-
         # 1. Panic (event)
         if (
             drop < -0.05
@@ -128,6 +126,10 @@ class UpbitMarketData(BaseMarketData):
             and trend_strength < 0
         ):
             return "panic"
+
+        # 🔥 1.5 Early Breakout (추가 핵심)
+        if price >= high20 and volume > volume_mean * 1.3 and ema_slope > 0:
+            return "bullish"
 
         # 2. Strong trends
         if trend_strength > 0.025 and adx > 25 and ema_slope > 0:
