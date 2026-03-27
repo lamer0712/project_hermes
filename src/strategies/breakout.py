@@ -102,7 +102,7 @@ class BreakoutStrategy(BaseStrategy):
             return Signal(
                 SignalType.HOLD,
                 ticker,
-                "홀딩 (추세 유지)",
+                "보유유지 - 추세 유지 중",
                 0,
                 0.0,
             )
@@ -119,7 +119,7 @@ class BreakoutStrategy(BaseStrategy):
 
         # not breakout (확실한 돌파: 고점 대비 +0.3% 초과 필요)
         if price <= recent_high * 1.003:
-            return Signal(SignalType.HOLD, ticker, "대기 (돌파 조건 미달)", 0, 0.0)
+            return Signal(SignalType.HOLD, ticker, "진입대기 - 돌파 조건 미달", 0, 0.0)
 
         strength = 0.3
 
@@ -153,13 +153,11 @@ class BreakoutStrategy(BaseStrategy):
             reasons.append("역배열감점")
 
         if strength >= 0.6:
-
             size_ratio = self.params["position_size_ratio"]
-            conf = min(strength, 1.0)
 
             rsi_val = float(entry_market_data.iloc[-1].get("rsi_14", 50))
             rsi_bonus = self.rsi_tiebreaker(rsi_val, mode="momentum")
-            final_conf = min(0.7 + rsi_bonus, 1.0)
+            final_conf = min(strength + rsi_bonus, 1.0)
 
             return Signal(
                 SignalType.BUY,
@@ -172,7 +170,7 @@ class BreakoutStrategy(BaseStrategy):
         return Signal(
             SignalType.HOLD,
             ticker,
-            "진입대기 (점수미달)",
+            f"진입대기 - 점수미달{strength:.1f}",
             0,
             0.0,
         )

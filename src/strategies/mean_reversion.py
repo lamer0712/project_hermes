@@ -92,7 +92,7 @@ class MeanReversionStrategy(BaseStrategy):
                     1.0,
                 )
 
-            return Signal(SignalType.HOLD, ticker, "홀딩 (추세 유지)", 0, 0.0)
+            return Signal(SignalType.HOLD, ticker, "보유유지 - 추세 유지 중", 0, 0.0)
 
         # ------------------------------
         # SETUP FILTER (1h)
@@ -111,7 +111,9 @@ class MeanReversionStrategy(BaseStrategy):
                 setup_rsi < setup_cfg["rsi_threshold"]
                 or setup_bb < setup_cfg["bb_position_threshold"]
             ):
-                return Signal(SignalType.HOLD, ticker, "대기 (Setup 미충족)", 0, 0.0)
+                return Signal(
+                    SignalType.HOLD, ticker, "진입대기 - Setup 미충족", 0, 0.0
+                )
 
         # ------------------------------
         # ENTRY
@@ -119,15 +121,14 @@ class MeanReversionStrategy(BaseStrategy):
         prev_price = entry_market_data.close.iloc[-2]
 
         # 반등 확인
-        if price <= prev_price:
-            return Signal(SignalType.HOLD, ticker, "대기 (하락 진행중)", 0, 0.0)
-
-        if self.is_downtrend(entry_market_data):
-            return Signal(SignalType.HOLD, ticker, "대기 (하락 추세)", 0, 0.0)
+        if price <= prev_price or self.is_downtrend(entry_market_data):
+            return Signal(SignalType.HOLD, ticker, "진입대기 - 하락세", 0, 0.0)
 
         is_fake_dip, reason = self.is_fake_dip(entry_market_data)
         if is_fake_dip:
-            return Signal(SignalType.HOLD, ticker, f"대기 (가짜 눌림목: {reason})", 0, 0.0)
+            return Signal(
+                SignalType.HOLD, ticker, f"진입대기 - 가짜 눌림목: {reason}", 0, 0.0
+            )
 
         conditions = 0
         reasons = []
@@ -148,9 +149,9 @@ class MeanReversionStrategy(BaseStrategy):
             conditions += 1
             reasons.append(f"단기급락({change_5*100:.1f}%)")
 
+        conf = min(0.4 + (conditions * 0.15), 1.0)
         if conditions >= 2:
-            conf = min(0.4 + (conditions * 0.15), 1.0)
-            
+
             rsi_val = float(entry_market_data.iloc[-1].get("rsi_14", 50))
             rsi_bonus = self.rsi_tiebreaker(rsi_val, mode="oversold")
             final_conf = min(conf + rsi_bonus, 1.0)
@@ -163,4 +164,4 @@ class MeanReversionStrategy(BaseStrategy):
                 final_conf,
             )
 
-        return Signal(SignalType.HOLD, ticker, f"진입대기 (조건부족)", 0, 0.0)
+        return Signal(SignalType.HOLD, ticker, f"진입대기 - 점수:{conf:.1%}", 0, 0.0)

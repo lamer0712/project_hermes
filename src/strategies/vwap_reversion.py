@@ -63,14 +63,14 @@ class VWAPReversionStrategy(BaseStrategy):
 
             if vwap_touch or rsi_overbought:
                 reason = "VWAP선 도달" if vwap_touch else f"RSI 1차회복({rsi:.0f})"
-                return Signal(
-                    SignalType.SELL, ticker, f"[익절/손절] {reason}", 1.0, 1.0
-                )
+                avg_price = holdings[ticker].get("avg_price", 0)
+                tag = "[익절]" if current_price > avg_price else "[손절]"
+                return Signal(SignalType.SELL, ticker, f"{tag} {reason}", 1.0, 1.0)
 
             return Signal(
                 SignalType.HOLD,
                 ticker,
-                f"홀딩 (VWAP회귀 대기 중, 이격: {((current_price-vwap)/vwap)*100:.1f}%)",
+                f"보유유지 - VWAP 이격: {((current_price-vwap)/vwap)*100:.1f}%",
                 0,
                 0.0,
             )
@@ -79,7 +79,7 @@ class VWAPReversionStrategy(BaseStrategy):
         # ENTRY (15m)
         # =========================
         if self.is_downtrend(entry_market_data):
-            return Signal(SignalType.HOLD, ticker, "대기 (하락 추세)", 0, 0.0)
+            return Signal(SignalType.HOLD, ticker, "진입대기 - 하락세", 0, 0.0)
 
         distance_to_vwap = (current_price - vwap) / vwap
         distance = abs(distance_to_vwap)
@@ -105,7 +105,11 @@ class VWAPReversionStrategy(BaseStrategy):
             is_fake_dip, reason = self.is_fake_dip(df)
             if is_fake_dip:
                 return Signal(
-                    SignalType.HOLD, ticker, f"대기 (가짜 눌림목: {reason})", 0, 0.0
+                    SignalType.HOLD,
+                    ticker,
+                    f"진입대기 - 가짜 눌림목: {reason}, 점수: {score:.1%}",
+                    0,
+                    0.0,
                 )
             # 진입 2. RSI 과매도 구간
             if (
@@ -120,7 +124,7 @@ class VWAPReversionStrategy(BaseStrategy):
                 return Signal(
                     SignalType.BUY,
                     ticker,
-                    f"VWAP 이격({distance_to_vwap*100:.1f}%) & RSI침체({rsi:.0f})",
+                    f"VWAP 이격: {distance_to_vwap*100:.1f}%, RSI침체: {rsi:.0f}",
                     strength,
                     final_conf,
                 )
@@ -128,7 +132,7 @@ class VWAPReversionStrategy(BaseStrategy):
         return Signal(
             SignalType.HOLD,
             ticker,
-            f"진입대기 (VWAP이격: {distance_to_vwap*100:.1f}%, 점수: {score:.1f})",
+            f"진입대기 - VWAP 이격: {distance_to_vwap*100:.1f}%, 점수: {score:.1f}",
             0,
             0.0,
         )

@@ -76,7 +76,7 @@ class PullbackTrendStrategy(BaseStrategy):
                     1.0,
                     1.0,
                 )
-                
+
             if current_price < ma20:
                 avg_price = holdings[ticker].get("avg_price", 0)
                 tag = "[익절]" if current_price > avg_price else "[손절]"
@@ -91,7 +91,7 @@ class PullbackTrendStrategy(BaseStrategy):
             return Signal(
                 SignalType.HOLD,
                 ticker,
-                "홀딩 (추세 유지)",
+                "보유유지 - 추세 유지 중",
                 0,
                 0.0,
             )
@@ -121,7 +121,7 @@ class PullbackTrendStrategy(BaseStrategy):
         strength = 0
 
         if self.is_downtrend(entry_market_data):
-            return Signal(SignalType.HOLD, ticker, "대기 (하락 추세)", 0, 0.0)
+            return Signal(SignalType.HOLD, ticker, "진입대기 - 하락세", 0, 0.0)
 
         rsi_cross_trigger = (
             rsi_entry > self.params["entry"]["rsi_threshold"]
@@ -148,7 +148,7 @@ class PullbackTrendStrategy(BaseStrategy):
         if setup_ok and strength >= 0.5:
 
             size_ratio = self.params["position_size_ratio"]
-            
+
             rsi_bonus = self.rsi_tiebreaker(rsi_entry, mode="oversold")
             final_conf = min(strength + rsi_bonus, 1.0)
 
@@ -182,7 +182,11 @@ class PullbackTrendStrategy(BaseStrategy):
         return Signal(
             SignalType.HOLD,
             ticker,
-            f"진입대기 (점수:{strength:.1f})" if setup_ok else "대기 (Setup 미충족)",
+            (
+                f"진입대기 - 점수:{strength:.1f}"
+                if setup_ok
+                else "진입대기 - (Setup 미충족)"
+            ),
             0,
             0.0,
         )
