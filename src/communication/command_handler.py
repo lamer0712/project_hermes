@@ -183,8 +183,8 @@ class CommandQueueHandler:
         sc = stat.get("signal_confidence", 0)
         current_price = stat.get("current_price", 0)
 
-        msg = f"⚙️ **전략별 모니터링 (개별)**\n"
-        msg += f"• {t} [{r}]: {s} → {st}_{ss:.0%} (Conf: {sc:.0%})\n  └ {sr}\n"
+        msg = f"⚙️ *티커 상세 현황*\n"
+        msg += f"• {t}\[{r.capitalize()}\]: {s}\[{st} {sc:.1f}\]\n  └ {sr}\n"
 
         holdings = self.pm.get_holdings(self.manager.name)
         if ticker in holdings and holdings[ticker]["volume"] > 0:
@@ -207,7 +207,7 @@ class CommandQueueHandler:
                 atr_pct = (atr / avg_price) * 100.0
                 stop_loss_pct = -max(3.0, min(15.0, atr_pct * 2.5))
 
-            msg += f"\n📦 **보유 포지션 상세 현황**\n"
+            msg += f"\n📦 *보유 포지션 상세 현황*\n"
             msg += f"• 매수 전략: {buy_strategy}({r})\n"
             msg += f"• 매수 이유: {sr}, score({sc:.1%})\n"
             msg += f"• 매수 금액: {h['volume'] * avg_price:,.0f}원\n"

@@ -615,11 +615,11 @@ class PortfolioManager:
             self.export_portfolio_report(agent_name)
 
             msg = (
-                f"✅ **실계좌 동기화 100% 완료**\n\n"
+                f"✅ *실계좌 동기화 100% 완료*\n\n"
                 f"💰 총 자본금: {true_total_capital:,.0f} KRW\n"
                 f"💳 보유 현금: {total_cash:,.0f} KRW\n"
                 f"🪙 코인 원가: {total_coin_cost:,.0f} KRW\n\n"
-                f"👥 **매니저에게 {target_capital_per_agent:,.0f} KRW 배분완료.**"
+                f"👥 *매니저에게 {target_capital_per_agent:,.0f} KRW 배분완료.*"
             )
             logger.info(f"[System] 동기화 성공: {true_total_capital} KRW 분배 완료.")
             return msg

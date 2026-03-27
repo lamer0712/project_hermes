@@ -390,7 +390,7 @@ class ManagerAgent:
             return
 
         # 1. Market Regime & 기본 자산 정보
-        msg = f"📊 **Investment Report**\n"
+        msg = f"📊 *Investment Report*\n"
         msg += f"🌐 Market Regime: {market_regime.upper()}\n"
         msg += f"💰 총 자산: {summary['total_value']:,.0f} KRW\n"
         msg += f"💵 현금 자산: {summary['cash']:,.0f} KRW ({summary['return_rate']:+.2f}%)\n\n"
@@ -398,7 +398,7 @@ class ManagerAgent:
         # 2. 보유 종목 투자금, 수익률, 수익금
         holdings = summary.get("holdings", {})
         if holdings:
-            msg += "📦 **보유 종목 현황**\n"
+            msg += "📦 *보유 종목 현황*\n"
             for ticker, h in holdings.items():
                 price = ticker_stats.get(ticker, {}).get(
                     "current_price", h["avg_price"]
@@ -431,7 +431,7 @@ class ManagerAgent:
             selected_stats = top_buys
 
         if ticker_stats and selected_stats:
-            msg += "⚙️ **티커별 모니터링**\n"
+            msg += "⚙️ *티커별 모니터링*\n"
             for stat in selected_stats[:3]:
                 t = stat["ticker"]
                 r = stat["regime"]
@@ -439,7 +439,7 @@ class ManagerAgent:
                 st = stat["signal_type"]
                 sr = stat["signal_reason"]
                 sc = stat["signal_confidence"]
-                msg += f"• {t}[{r.capitalize()}]: {s}[{st},{sc:.0}]\n  └ {sr}\n"
+                msg += f"• {t}\[{r.capitalize()}\]: {s}\[{st} {sc:.1f}\]\n  └ {sr}\n"
 
         self.notifier.send_message(msg)
 
