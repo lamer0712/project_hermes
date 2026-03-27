@@ -441,9 +441,9 @@ class ManagerAgent:
                 ss = stat["signal_strength"]
                 sc = stat["signal_confidence"]
                 if st == "HOLD":
-                    msg += f"• {t} [{r}]: {s} → {st} 점수:{sc:.0%}\n  └ {sr}\n"
+                    msg += f"• {t} [{r}]: {s} → {st} 점수:{sc:.0}\n  └ {sr}\n"
                 else:
-                    msg += f"• {t} [{r}]: {s} → {st} 점수:{sc:.0%} 비중:{ss:.0%}\n  └ {sr}\n"
+                    msg += f"• {t} [{r}]: {s} → {st} 점수:{sc:.0} 비중:{ss:.0%}\n  └ {sr}\n"
 
         # # 4. 추가 추천 내용
         # msg += "💡 **AI 추천 & 인사이트**\n"

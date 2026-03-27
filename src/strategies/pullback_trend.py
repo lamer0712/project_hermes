@@ -181,14 +181,4 @@ class PullbackTrendStrategy(BaseStrategy):
                 min(0.8 + rsi_bonus, 1.0),
             )
 
-        return Signal(
-            SignalType.HOLD,
-            ticker,
-            (
-                f"진입대기 - 점수:{strength:.1f}"
-                if setup_ok
-                else "진입대기 - (Setup 미충족)"
-            ),
-            0,
-            strength,
-        )
+        return Signal(SignalType.HOLD, ticker, f"진입대기", 0, strength)

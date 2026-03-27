@@ -164,4 +164,4 @@ class MeanReversionStrategy(BaseStrategy):
                 final_conf,
             )
 
-        return Signal(SignalType.HOLD, ticker, f"진입대기 - 점수:{conf:.1%}", 0, conf)
+        return Signal(SignalType.HOLD, ticker, f"진입대기", 0, conf)

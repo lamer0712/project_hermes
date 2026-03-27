@@ -170,7 +170,7 @@ class BreakoutStrategy(BaseStrategy):
         return Signal(
             SignalType.HOLD,
             ticker,
-            f"진입대기 - 점수:{strength:.1f}",
+            f"진입대기",
             0,
             strength,
         )
