@@ -76,7 +76,7 @@ class TelegramNotifier:
         버퍼링 모드(is_buffering) 동작 시 리스트에 담아둡니다.
         """
         if self.is_buffering:
-            if "**Hermes Investment Report**" in text:
+            if "Investment Report" in text:
                 self.message_buffer.insert(0, text)
             else:
                 self.message_buffer.append(text)
