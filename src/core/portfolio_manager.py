@@ -237,10 +237,9 @@ class PortfolioManager:
             strategy=strategy,
         )
         self.export_portfolio_report(agent_name)
-        logger.info(
-            f"✅ 매수: {ticker} 거래수량: {volume:.6f}, 단가: {price:,.0f}, 거래금액: {total_cost_excluding_fee:,.0f}, 수수료: {paid_fee:,.2f}, 정산금액: {total_cost_including_fee:,.0f}, 잔여현금: {portfolio['cash']:,.0f})"
-        )
-        return True
+        msg = f"✅ 매수: {ticker} 거래수량: {volume:.6f}, 단가: {price:,.0f}, 거래금액: {total_cost_excluding_fee:,.0f}, 수수료: {paid_fee:,.2f}, 정산금액: {total_cost_including_fee:,.0f}, 잔여현금: {portfolio['cash']:,.0f}"
+        logger.info(msg)
+        return msg
 
     def record_sell(
         self,
@@ -311,7 +310,7 @@ class PortfolioManager:
         profit_emoji = "⏫" if profit > 0 else "⏬"
         msg = f"{profit_emoji} 매도: {ticker} 거래수량: {volume:.3f}, 단가: {price:,.1f}, 거래금액: {sell_revenue_gross:,.0f}, 수수료: {paid_fee:,.2f}, 정산금액: {sell_revenue_net:,.0f}, 손익: {profit:+,.0f}({profit_ratio:+.2f}%), 평단가: {avg_price:,.1f}, 고가: {max_price:,.1f}"
         logger.info(msg)
-        return True
+        return msg
 
     def set_halt(self, agent_name: str, status: bool) -> bool:
         """에이전트의 거래 중지 상태를 설정합니다."""

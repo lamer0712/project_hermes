@@ -10,7 +10,7 @@ class RiskManager:
 
     risk_params = {
         "stop_loss_pct": -5.5,
-        "take_profit_pct": 12.0,
+        "take_profit_pct": 10.0,
         "trailing_start_pct": 5.0,
         "trailing_stop_pct": 3.5,
         "partial_stop_loss": [
@@ -66,7 +66,9 @@ class RiskManager:
 
             partial_stop_loss_list = []
             for item in base_partial_sl:
-                multiplier = item["pct"] / base_stop_loss_pct if base_stop_loss_pct != 0 else 1.0
+                multiplier = (
+                    item["pct"] / base_stop_loss_pct if base_stop_loss_pct != 0 else 1.0
+                )
                 dynamic_pct = round(stop_loss_pct * multiplier, 2)
                 partial_stop_loss_list.append(
                     {"pct": dynamic_pct, "strength": item["strength"]}
@@ -87,13 +89,12 @@ class RiskManager:
                 (current_price - max_price) / max_price * 100.0 if max_price > 0 else 0
             )
             if drawdown_from_max <= -abs(trailing_stop_pct):
-                logger.info(
-                    f"📉 트레일링 스탑 발동: {ticker} (최고점 대비 {drawdown_from_max:.2f}% <= -{abs(trailing_stop_pct)}%)"
-                )
+                profit = (current_price - avg_price) * holdings[ticker]["volume"]
+                reason = f"트레일링 스탑: 수익률 {profit_pct:.2f}%, {profit:,.0f}원, 최고점 대비 {drawdown_from_max:.2f}%"
                 return Signal(
                     type=SignalType.SELL,
                     ticker=ticker,
-                    reason=f"[익절/손절] 트레일링 스탑 ({profit_pct:.1f}%)",
+                    reason=reason,
                     strength=1.0,
                     confidence=1.0,
                 )
@@ -101,16 +102,15 @@ class RiskManager:
         # 2. 강제 익절
         tp_levels_hit = holdings[ticker].get("tp_levels_hit", [])
         if profit_pct >= take_profit_pct and take_profit_pct not in tp_levels_hit:
-            logger.info(
-                f"🎯 강제 익절 발동: {ticker} (수익률 {profit_pct:.2f}% >= {take_profit_pct}%)"
-            )
+            profit = (current_price - avg_price) * holdings[ticker]["volume"]
+            reason = f"강제 익절: 수익률 {profit_pct:.2f}%, {profit:,.0f}원, >={take_profit_pct}%"
             self.portfolio_manager.update_holding_metadata(
                 agent_name, ticker, hit_tp_level=take_profit_pct
             )
             return Signal(
                 type=SignalType.SELL,
                 ticker=ticker,
-                reason=f"[익절] 목표수익 타겟 ({profit_pct:.1f}%)",
+                reason=reason,
                 strength=0.5,
                 confidence=1.0,
             )
@@ -124,29 +124,28 @@ class RiskManager:
                 sl_levels_hit = holdings[ticker].get("sl_levels_hit", [])
 
                 if profit_pct <= stage_pct and stage_pct not in sl_levels_hit:
-                    logger.error(
-                        f"🚨 분할 손절 발동 [{stage_pct}%]: {ticker} (수익률 {profit_pct:.2f}% <= {stage_pct}%) 비율: {stage_strength*100}%"
-                    )
+                    profit = (current_price - avg_price) * holdings[ticker]["volume"]
+                    reason = f"분할 손절: 수익률 {profit_pct:.2f}%, {profit:,.0f}원, <={stage_pct}%"
                     self.portfolio_manager.update_holding_metadata(
                         agent_name, ticker, hit_sl_level=stage_pct
                     )
                     return Signal(
                         type=SignalType.SELL,
                         ticker=ticker,
-                        reason=f"[손절] 분할 스탑로스 단계 {stage_pct}%",
+                        reason=reason,
                         strength=stage_strength,
                         confidence=1.0,
                     )
 
         # 4. 단일 기본 손절
         if not partial_stop_loss and profit_pct <= stop_loss_pct:
-            logger.warning(
-                f"🚨 강제 손절 발동: {ticker} (수익률 {profit_pct:.2f}% <= {stop_loss_pct}%)"
-            )
+            profit = (current_price - avg_price) * holdings[ticker]["volume"]
+            reason = f"강제 손절: 수익률 {profit_pct:.2f}%, {profit:,.0f}원, <={stop_loss_pct}%"
+
             return Signal(
                 type=SignalType.SELL,
                 ticker=ticker,
-                reason=f"[손절] 메인 스탑로스 ({profit_pct:.1f}%)",
+                reason=reason,
                 strength=1.0,
                 confidence=1.0,
             )

@@ -10,6 +10,7 @@ from src.core.execution_manager import ExecutionManager
 from src.core.models import TickerEvaluation, CycleContext
 from src.strategies.base import Signal, SignalType
 
+
 class ManagerAgent:
     """
     투자 사이클을 관리하는 에이전트.
@@ -72,7 +73,6 @@ class ManagerAgent:
         매수는 가장 강한 시그널의 1종목만 실행합니다.
         """
         self.notifier.start_buffering()
-        self.notifier.send_message("[log]")
         self.execution_manager.check_pending_orders()
 
         if not setup_market_data or not entry_market_data:
@@ -472,8 +472,13 @@ class ManagerAgent:
         risk_signal = self.risk_manager.evaluate_risk(self.name, ticker, current_price)
         if risk_signal:
             risk_signal_str = risk_signal.__str__()
+            self.notifier.start_buffering()
             log = f"⚡[Realtime Risk Hook]\n{risk_signal_str}"
+            self.notifier.send_message(log)
             logger.warning(log)
             self.execution_manager.execute_sell(
                 self.name, ticker, current_price, risk_signal
             )
+            # 주문 제출 후 즉시 체결 여부 확인 (IOC 등 대응)
+            self.execution_manager.check_pending_orders()
+            self.notifier.flush_buffer()

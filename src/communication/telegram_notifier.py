@@ -77,8 +77,6 @@ class TelegramNotifier:
         """
         if self.is_buffering:
             if "**Hermes Investment Report**" in text:
-                if len(self.message_buffer) == 1:  # "[log]"만 있는 경우
-                    self.message_buffer.pop()
                 self.message_buffer.insert(0, text)
             else:
                 self.message_buffer.append(text)

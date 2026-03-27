@@ -43,11 +43,13 @@ class ExecutionManager:
                 completed_uuids.append((uuid_str, order_info, order_data))
 
         # 실제 PM 업데이트 처리
+        trade_msgs = []
         for uuid_str, order_info, order_data in completed_uuids:
             state = order_info.get("state")
             order_type = order_data["type"]
             agent_name = order_data["agent_name"]
             ticker = order_data["ticker"]
+            reason = order_data.get("reason", "")
 
             if state == "done" or (
                 state == "cancel" and float(order_info.get("executed_volume", 0)) > 0
@@ -76,7 +78,7 @@ class ExecutionManager:
                     if order_type == "buy":
                         strategy_name = order_data.get("strategy_name", "Unknown")
                         atr = order_data.get("atr", 0.0)
-                        self.portfolio_manager.record_buy(
+                        msg = self.portfolio_manager.record_buy(
                             agent_name=agent_name,
                             ticker=ticker,
                             volume=executed_volume,
@@ -89,31 +91,22 @@ class ExecutionManager:
                             self.portfolio_manager.update_holding_metadata(
                                 agent_name, ticker, atr_14=atr
                             )
+                        if msg and isinstance(msg, str):
+                            trade_msgs.append(f"{msg}\n  └ 사유: {reason}")
                     elif order_type == "sell":
                         target_volume_to_deduct = order_data.get(
                             "pm_tracked_volume", executed_volume
                         )
-                        # 부분 체결인 경우, track 수량도 비율대로 조정 필요할 수 있으나
-                        # 여기서는 실제 체결된 만큼만 반영하거나, 취소된 나머지는 PM에 남겨둠.
-                        # Upbit SELL IOC의 경우, 체결안된건 그냥 취소되므로 PM에서도 차감 안하는게 맞음.
-                        # 단, record_sell은 '매도한 만큼'을 기록하는 것이므로 executed_volume이 맞음.
-                        sold = self.portfolio_manager.record_sell(
+                        msg = self.portfolio_manager.record_sell(
                             agent_name=agent_name,
                             ticker=ticker,
-                            volume=executed_volume,  # 실제 체결된 만큼만 기록
+                            volume=executed_volume,
                             price=current_price,
                             executed_funds=executed_funds,
                             paid_fee=paid_fee,
                         )
-                        # 매도 체결 알림 (PM에서 분리됨)
-                        if sold:
-                            avg_price = current_price  # fallback
-                            sell_revenue_net = executed_funds - paid_fee
-                            profit = sell_revenue_net - (avg_price * executed_volume)
-                            profit_ratio = (profit / (avg_price * executed_volume)) * 100 if avg_price * executed_volume > 0 else 0
-                            profit_emoji = "⏫" if profit > 0 else "⏬"
-                            msg = f"{profit_emoji} 매도: {ticker} 수량: {executed_volume:.3f}, 금액: {executed_funds:,.0f}, 수수료: {paid_fee:,.2f}"
-                            self.notifier.send_message(msg)
+                        if msg and isinstance(msg, str):
+                            trade_msgs.append(f"{msg}\n  └ 사유: {reason}")
 
             elif state == "cancel":
                 logger.warning(
@@ -123,6 +116,11 @@ class ExecutionManager:
             # 처리 완료된 주문은 딕셔너리에서 제거
             if uuid_str in self.pending_orders:
                 del self.pending_orders[uuid_str]
+
+        # 요약 메시지 전송
+        if trade_msgs:
+            combined_msg = "🔔 **매매 체결 알림**\n" + "\n".join(trade_msgs)
+            self.notifier.send_message(combined_msg)
 
     def execute_buy(
         self,
@@ -219,6 +217,7 @@ class ExecutionManager:
                     "atr": atr,
                     "strategy_name": strategy_name,
                     "volume": order_amount / current_price,  # fallback obj
+                    "reason": signal.reason if hasattr(signal, "reason") else "",
                 }
                 return True
 
@@ -314,4 +313,5 @@ class ExecutionManager:
                     "current_price": current_price,
                     "pm_tracked_volume": pm_tracked_volume,
                     "volume": sell_volume,
+                    "reason": signal.reason if hasattr(signal, "reason") else "",
                 }
