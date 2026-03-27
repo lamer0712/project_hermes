@@ -439,7 +439,7 @@ class ManagerAgent:
                 st = stat["signal_type"]
                 sr = stat["signal_reason"]
                 sc = stat["signal_confidence"]
-                msg += f"• {t}\[{r.capitalize()}\]: {s}\[{st} {sc:.1f}\]\n  └ {sr}\n"
+                msg += f"• {t}\[{r.capitalize()}]: {s}\[{st} {sc:.1f}]\n  └ {sr}\n"
 
         self.notifier.send_message(msg)
 
