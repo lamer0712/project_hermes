@@ -98,6 +98,7 @@ class UpbitMarketData(BaseMarketData):
     @staticmethod
     def regime_detect(ticker: str, df):
         price = df.close.iloc[-1]
+        high20 = df.high_20.iloc[-1]
 
         ma20 = df.ma_20.iloc[-1]
         ma60 = df.ma_60.iloc[-1]
