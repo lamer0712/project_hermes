@@ -79,7 +79,7 @@ class VWAPReversionStrategy(BaseStrategy):
         # ENTRY (15m)
         # =========================
         if self.is_downtrend(entry_market_data):
-            return Signal(SignalType.HOLD, ticker, "진입대기 - 하락세", 0, 0.0)
+            return Signal(SignalType.HOLD, ticker, "진입대기 - 하락세", 0, 0.1)
 
         distance_to_vwap = (current_price - vwap) / vwap
         distance = abs(distance_to_vwap)
@@ -109,7 +109,7 @@ class VWAPReversionStrategy(BaseStrategy):
                     ticker,
                     f"진입대기 - 가짜 눌림목: {reason}, 점수: {score:.1%}",
                     0,
-                    0.0,
+                    score,
                 )
             # 진입 2. RSI 과매도 구간
             if (
@@ -134,5 +134,5 @@ class VWAPReversionStrategy(BaseStrategy):
             ticker,
             f"진입대기 - VWAP 이격: {distance_to_vwap*100:.1f}%, 점수: {score:.1f}",
             0,
-            0.0,
+            score,
         )

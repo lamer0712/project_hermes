@@ -119,7 +119,7 @@ class BreakoutStrategy(BaseStrategy):
 
         # not breakout (확실한 돌파: 고점 대비 +0.3% 초과 필요)
         if price <= recent_high * 1.003:
-            return Signal(SignalType.HOLD, ticker, "진입대기 - 돌파 조건 미달", 0, 0.0)
+            return Signal(SignalType.HOLD, ticker, "진입대기 - 돌파 조건 미달", 0, 0.1)
 
         strength = 0.3
 
@@ -170,7 +170,7 @@ class BreakoutStrategy(BaseStrategy):
         return Signal(
             SignalType.HOLD,
             ticker,
-            f"진입대기 - 점수미달{strength:.1f}",
+            f"진입대기 - 점수:{strength:.1f}",
             0,
-            0.0,
+            strength,
         )

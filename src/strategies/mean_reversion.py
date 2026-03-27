@@ -112,7 +112,7 @@ class MeanReversionStrategy(BaseStrategy):
                 or setup_bb < setup_cfg["bb_position_threshold"]
             ):
                 return Signal(
-                    SignalType.HOLD, ticker, "진입대기 - Setup 미충족", 0, 0.0
+                    SignalType.HOLD, ticker, "진입대기 - Setup 미충족", 0, 0.01
                 )
 
         # ------------------------------
@@ -122,12 +122,12 @@ class MeanReversionStrategy(BaseStrategy):
 
         # 반등 확인
         if price <= prev_price or self.is_downtrend(entry_market_data):
-            return Signal(SignalType.HOLD, ticker, "진입대기 - 하락세", 0, 0.0)
+            return Signal(SignalType.HOLD, ticker, "진입대기 - 하락세", 0, 0.1)
 
         is_fake_dip, reason = self.is_fake_dip(entry_market_data)
         if is_fake_dip:
             return Signal(
-                SignalType.HOLD, ticker, f"진입대기 - 가짜 눌림목: {reason}", 0, 0.0
+                SignalType.HOLD, ticker, f"진입대기 - 가짜 눌림목: {reason}", 0, 0.2
             )
 
         conditions = 0
@@ -164,4 +164,4 @@ class MeanReversionStrategy(BaseStrategy):
                 final_conf,
             )
 
-        return Signal(SignalType.HOLD, ticker, f"진입대기 - 점수:{conf:.1%}", 0, 0.0)
+        return Signal(SignalType.HOLD, ticker, f"진입대기 - 점수:{conf:.1%}", 0, conf)

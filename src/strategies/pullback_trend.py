@@ -112,6 +112,8 @@ class PullbackTrendStrategy(BaseStrategy):
             and bb_pos < setup_cfg["bb_position_threshold"]
             # and setup_price < ma20
         )
+        if not setup_ok:
+            return Signal(SignalType.HOLD, ticker, "진입대기 - Setup 미충족", 0, 0.01)
 
         # =========================
         # ENTRY (15m)
@@ -121,7 +123,7 @@ class PullbackTrendStrategy(BaseStrategy):
         strength = 0
 
         if self.is_downtrend(entry_market_data):
-            return Signal(SignalType.HOLD, ticker, "진입대기 - 하락세", 0, 0.0)
+            return Signal(SignalType.HOLD, ticker, "진입대기 - 하락세", 0, 0.1)
 
         rsi_cross_trigger = (
             rsi_entry > self.params["entry"]["rsi_threshold"]
@@ -145,7 +147,7 @@ class PullbackTrendStrategy(BaseStrategy):
             vol_ratio = (volume / vol_ma) * 100 if vol_ma > 0 else 0
             reasons.append(f"거래량급증({vol_ratio:.0f}%)")
 
-        if setup_ok and strength >= 0.5:
+        if strength >= 0.5:
 
             size_ratio = self.params["position_size_ratio"]
 
@@ -188,5 +190,5 @@ class PullbackTrendStrategy(BaseStrategy):
                 else "진입대기 - (Setup 미충족)"
             ),
             0,
-            0.0,
+            strength,
         )
