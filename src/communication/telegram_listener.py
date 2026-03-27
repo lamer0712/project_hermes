@@ -50,10 +50,10 @@ async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
         pass
 
     CommandQueue.push("status", {})
-    await context.bot.send_message(
-        chat_id=chat_id,
-        text="✅ **status** 명령 접수\n⏳ 다음 스케줄러 주기에 실행됩니다 (최대 2초 내)",
-    )
+    # await context.bot.send_message(
+    #     chat_id=chat_id,
+    #     text="✅ **status** 명령 접수\n⏳ 다음 스케줄러 주기에 실행됩니다 (최대 2초 내)",
+    # )
 
 
 async def cmd_restart(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -117,10 +117,10 @@ async def cmd_liquidate(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ticker = f"KRW-{ticker_raw}" if not ticker_raw.startswith("KRW-") else ticker_raw
 
     CommandQueue.push("liquidate", {"ticker": ticker})
-    await context.bot.send_message(
-        chat_id=chat_id,
-        text=f"✅ **liquidate** 명령 접수 ({ticker})\n⏳ 다음 스케줄러 주기에 실행됩니다 (최대 2초 내)",
-    )
+    # await context.bot.send_message(
+    #     chat_id=chat_id,
+    #     text=f"✅ **liquidate** 명령 접수 ({ticker})\n⏳ 다음 스케줄러 주기에 실행됩니다 (최대 2초 내)",
+    # )
 
 
 async def cmd_eval(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -138,10 +138,10 @@ async def cmd_eval(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ticker = f"KRW-{ticker_raw}" if not ticker_raw.startswith("KRW-") else ticker_raw
 
     CommandQueue.push("eval", {"ticker": ticker})
-    await context.bot.send_message(
-        chat_id=chat_id,
-        text=f"✅ **eval** 명령 접수 ({ticker})\n⏳ 다음 스케줄러 주기에 실행됩니다 (최대 2초 내)",
-    )
+    # await context.bot.send_message(
+    #     chat_id=chat_id,
+    #     text=f"✅ **eval** 명령 접수 ({ticker})\n⏳ 다음 스케줄러 주기에 실행됩니다 (최대 2초 내)",
+    # )
 
 
 async def cmd_report(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -150,10 +150,10 @@ async def cmd_report(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     CommandQueue.push("report", {})
-    await context.bot.send_message(
-        chat_id=chat_id,
-        text="✅ **report** 명령 접수\n⏳ 전략별 수익률 리포트를 생성합니다 (최대 2초 내)",
-    )
+    # await context.bot.send_message(
+    #     chat_id=chat_id,
+    #     text="✅ **report** 명령 접수\n⏳ 전략별 수익률 리포트를 생성합니다 (최대 2초 내)",
+    # )
 
 
 async def unknown_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -222,7 +222,9 @@ async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
             f"[Telegram Listener] Network Warning: {type(context.error).__name__} - {context.error} (Polling will retry automatically)"
         )
     else:
-        logger.error(f"[Telegram Listener] Unhandled error: {type(context.error).__name__} - {context.error}")
+        logger.error(
+            f"[Telegram Listener] Unhandled error: {type(context.error).__name__} - {context.error}"
+        )
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
