@@ -128,26 +128,40 @@ class UpbitMarketData(BaseMarketData):
         ):
             return "panic"
 
-        # 🔥 1.5 Early Breakout (추가 핵심)
-        if price >= high20 and volume > volume_mean * 1.3 and ema_slope > 0:
-            return "bullish"
+        # 🔥 1.5 Recovery (하락 → 반등 초입)
+        if (
+            ema_slope > 0
+            and price > ma20
+            and volume > volume_mean * 1.2
+            and trend_strength < 0
+        ):
+            return "recovery"
 
-        # 2. Strong trends
+        # 🔥 2. Early Breakout (강화)
+        if (
+            price >= high20
+            and volume > volume_mean * 1.5
+            and ema_slope > 0
+            and price > ma20
+        ):
+            return "early_breakout"
+
+        # 3. Strong trends
         if trend_strength > 0.025 and adx > 25 and ema_slope > 0:
             return "bullish"
 
         if trend_strength < -0.025 and adx > 25 and ema_slope < 0:
             return "bearish"
 
-        # 3. Weak trends
-        if trend_strength > 0.012 and ema_slope > 0:
-            return "bullish"
+        # 4. Weak trends (빠르게 감지)
+        if trend_strength > 0.008 and ema_slope > 0:
+            return "weak_bullish"
 
-        if trend_strength < -0.012 and ema_slope < 0:
-            return "bearish"
+        if trend_strength < -0.008 and ema_slope < 0:
+            return "weak_bearish"
 
-        # 4. Range / Volatility
-        if adx < 20 and abs(trend_strength) < 0.01:
+        # 5. Range / Volatility (조건 타이트하게)
+        if adx < 18 and abs(trend_strength) < 0.006:
             if volatility > vol_mean * 1.3:
                 return "volatile"
             else:

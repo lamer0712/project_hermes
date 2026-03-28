@@ -29,13 +29,20 @@ class ManagerAgent:
     MAX_POSITIONS = 5
 
     # 시장 Regime에 따른 전략 매핑
+    # STRATEGY_MAP = {
+    #     "bullish": ["Breakout", "PullbackTrend"],
+    #     "ranging": ["VWAPReversion", "MeanReversion"],
+    #     "volatile": ["Breakout", "VWAPReversion"],
+    #     # "neutral": ["VWAPReversion", "MeanReversion"],
+    #     # "bearish": ["Bearish"],
+    #     # "panic": ["Panic"],
+    # }
     STRATEGY_MAP = {
+        "recovery": ["PullbackTrend"],
+        "weak_bullish": ["PullbackTrend"],
         "bullish": ["Breakout", "PullbackTrend"],
         "ranging": ["VWAPReversion", "MeanReversion"],
-        "volatile": ["Breakout", "VWAPReversion"],
-        # "neutral": ["VWAPReversion", "MeanReversion"],
-        # "bearish": ["Bearish"],
-        # "panic": ["Panic"],
+        "volatile": ["Breakout"],
     }
 
     def __init__(
