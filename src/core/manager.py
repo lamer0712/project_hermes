@@ -39,7 +39,7 @@ class ManagerAgent:
     # }
     STRATEGY_MAP = {
         "recovery": ["PullbackTrend"],
-        "weak_bullish": ["PullbackTrend"],
+        "weakbullish": ["PullbackTrend"],
         "bullish": ["Breakout", "PullbackTrend"],
         "ranging": ["VWAPReversion", "MeanReversion"],
         "volatile": ["Breakout"],
