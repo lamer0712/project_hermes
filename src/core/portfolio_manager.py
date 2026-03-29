@@ -83,6 +83,8 @@ class PortfolioManager:
                             "tp_levels_hit": h.get("tp_levels_hit", []),
                             "atr_14": h.get("atr_14", 0),
                             "strategy": h.get("strategy", "Unknown"),
+                            "custom_sl_price": h.get("custom_sl_price", None),
+                            "custom_tp_price": h.get("custom_tp_price", None),
                         }
                     self.portfolios[agent_name]["holdings"] = mem_holdings
 
@@ -211,6 +213,8 @@ class PortfolioManager:
                 "tp_levels_hit": existing.get("tp_levels_hit", []),
                 "atr_14": existing.get("atr_14", 0),
                 "strategy": strategy,
+                "custom_sl_price": existing.get("custom_sl_price", None),
+                "custom_tp_price": existing.get("custom_tp_price", None),
             }
         else:
             holdings[ticker] = {
@@ -222,6 +226,8 @@ class PortfolioManager:
                 "tp_levels_hit": [],
                 "atr_14": 0,
                 "strategy": strategy,
+                "custom_sl_price": None,
+                "custom_tp_price": None,
             }
 
         portfolio["total_trades"] = portfolio.get("total_trades", 0) + 1
@@ -362,6 +368,8 @@ class PortfolioManager:
         hit_sl_level: float = None,
         hit_tp_level: float = None,
         atr_14: float = None,
+        custom_sl_price: float = None,
+        custom_tp_price: float = None,
     ) -> bool:
         """
         보유 종목의 최대 가격(Trailing Stop용)과 도달한 손절 단계(Partial Stop Loss용)를 업데이트합니다.
@@ -398,6 +406,14 @@ class PortfolioManager:
 
         if atr_14 is not None:
             holding["atr_14"] = atr_14
+            modified = True
+
+        if custom_sl_price is not None:
+            holding["custom_sl_price"] = custom_sl_price
+            modified = True
+
+        if custom_tp_price is not None:
+            holding["custom_tp_price"] = custom_tp_price
             modified = True
 
         if modified:
@@ -598,12 +614,16 @@ class PortfolioManager:
                     )
                     data["atr_14"] = old_holdings[ticker].get("atr_14", 0)
                     data["strategy"] = old_holdings[ticker].get("strategy", "Unknown")
+                    data["custom_sl_price"] = old_holdings[ticker].get("custom_sl_price", None)
+                    data["custom_tp_price"] = old_holdings[ticker].get("custom_tp_price", None)
                 else:
                     data["max_price"] = data["avg_price"]
                     data["sl_levels_hit"] = []
                     data["tp_levels_hit"] = []
                     data["atr_14"] = 0
                     data["strategy"] = "Unknown"
+                    data["custom_sl_price"] = None
+                    data["custom_tp_price"] = None
 
                 self.portfolios[agent_name]["holdings"][ticker] = data
                 allocated_costs += data["total_cost"]
@@ -618,7 +638,7 @@ class PortfolioManager:
                 f"✅ *실계좌 동기화 100% 완료*\n\n"
                 f"💰 총 자본금: {true_total_capital:,.0f} KRW\n"
                 f"💳 보유 현금: {total_cash:,.0f} KRW\n"
-                f"🪙 코인 원가: {total_coin_cost:,.0f} KRW\n\n"
+                f"🪙 코인 시재: {total_coin_cost:,.0f} KRW\n\n"
                 f"👥 *매니저에게 {target_capital_per_agent:,.0f} KRW 배분완료.*"
             )
             logger.info(f"[System] 동기화 성공: {true_total_capital} KRW 분배 완료.")
@@ -627,3 +647,19 @@ class PortfolioManager:
         except Exception as e:
             traceback.print_exc()
             return f"❌ 동기화 실패: {e}"
+
+    def has_traded_strategy_today(self, agent_name: str, strategy: str) -> bool:
+        """오늘(KST 기준) 특정 전략으로 매수한 기록이 있는지 확인합니다."""
+        try:
+            with self.db.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute('''
+                    SELECT COUNT(*) FROM trade_history 
+                    WHERE agent_name = ? AND strategy = ? AND side = 'buy'
+                    AND date(timestamp, '+9 hours') = date('now', '+9 hours')
+                ''', (agent_name, strategy))
+                count = cursor.fetchone()[0]
+                return count[:] > 0 if isinstance(count, tuple) else count > 0
+        except Exception as e:
+            logger.error(f"[Manager] 당일 전략 매수 확인 실패: {e}")
+            return False

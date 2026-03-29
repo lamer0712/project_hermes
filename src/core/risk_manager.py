@@ -83,6 +83,32 @@ class RiskManager:
             reverse=True,
         )
 
+        # 0. 전략 커스텀 지정 손절/익절
+        custom_tp_price = holdings[ticker].get("custom_tp_price")
+        custom_sl_price = holdings[ticker].get("custom_sl_price")
+
+        if custom_tp_price is not None and current_price >= custom_tp_price:
+            profit = (current_price - avg_price) * holdings[ticker]["volume"]
+            reason = f"커스텀 목표가 익절: 수익률 {profit_pct:.2f}%, {profit:,.0f}원, 목표가({custom_tp_price:,.0f}) 도달"
+            return Signal(
+                type=SignalType.SELL,
+                ticker=ticker,
+                reason=reason,
+                strength=1.0,
+                confidence=1.0,
+            )
+
+        if custom_sl_price is not None and current_price <= custom_sl_price:
+            profit = (current_price - avg_price) * holdings[ticker]["volume"]
+            reason = f"커스텀 지정가 손절: 수익률 {profit_pct:.2f}%, {profit:,.0f}원, 손절가({custom_sl_price:,.0f}) 도달"
+            return Signal(
+                type=SignalType.SELL,
+                ticker=ticker,
+                reason=reason,
+                strength=1.0,
+                confidence=1.0,
+            )
+
         # 1. 트레일링 스탑
         if trailing_stop_pct is not None and profit_pct >= trailing_start_pct:
             drawdown_from_max = (

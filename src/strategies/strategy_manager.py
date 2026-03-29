@@ -9,7 +9,7 @@ from src.strategies.breakout import BreakoutStrategy
 from src.strategies.bearish import BearishStrategy
 from src.strategies.panic import PanicStrategy
 from src.strategies.vwap_reversion import VWAPReversionStrategy
-
+from src.strategies.opening_scalp import OpeningScalpStrategy
 
 class StrategyManager:
     """
@@ -27,6 +27,7 @@ class StrategyManager:
         self.register("Bearish", BearishStrategy)
         self.register("Panic", PanicStrategy)
         self.register("VWAPReversion", VWAPReversionStrategy)
+        self.register("OpeningScalp", OpeningScalpStrategy)
 
 
     def __init__(self):

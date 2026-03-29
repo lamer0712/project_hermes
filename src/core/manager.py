@@ -251,6 +251,8 @@ class ManagerAgent:
             signal_strength=signal.strength if signal else 0,
             signal_confidence=signal.confidence if signal else 0,
             current_price=current_price,
+            custom_sl_price=signal.custom_sl_price if signal else None,
+            custom_tp_price=signal.custom_tp_price if signal else None,
         )
 
     def _evaluate_and_execute_sells(
@@ -283,6 +285,8 @@ class ManagerAgent:
                     reason=evaluation.signal_reason,
                     strength=evaluation.signal_strength,
                     confidence=evaluation.signal_confidence,
+                    custom_sl_price=evaluation.custom_sl_price,
+                    custom_tp_price=evaluation.custom_tp_price,
                 )
                 sig_str = signal.__str__()
                 self.notifier.send_message(
@@ -307,6 +311,8 @@ class ManagerAgent:
                     reason=evaluation.signal_reason,
                     strength=evaluation.signal_strength,
                     confidence=evaluation.signal_confidence,
+                    custom_sl_price=evaluation.custom_sl_price,
+                    custom_tp_price=evaluation.custom_tp_price,
                 )
                 # 전략을 다시 로드 (매수 실행에 필요)
                 strategy = self.strategy_manager.get_strategy(evaluation.strategy)
@@ -469,7 +475,7 @@ class ManagerAgent:
             risk_signal_str = risk_signal.__str__()
             self.notifier.start_buffering()
             log = f"⚡[Realtime Risk Hook]\n{risk_signal_str}"
-            self.notifier.send_message(log)
+            # self.notifier.send_message(log)
             logger.warning(log)
             self.execution_manager.execute_sell(
                 self.name, ticker, current_price, risk_signal

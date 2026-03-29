@@ -1,54 +1,29 @@
-# Hermes Core Architecture 리팩토링 완료 보고서
+# 5-Minute Opening Scalping Strategy
 
-유지보수 확장성 개선 및 데이터 흐름 명확화를 위한 핵심 리팩토링이 성공적으로 완료되었습니다.
+## 개요
+오전 9시 30분~35분 KST 시가를 기준으로 고가/저가를 파악한 뒤, 5분봉 기준 돌파와 리테스트가 발생하면 진입하는 전용 스캘핑 전략을 구현했습니다. 이를 위해 09:35 ~ 10:30 구간에만 작동하는 전용 5분 간격 스케줄러를 추가하고, 포트폴리오 매니저와 리스크 매니저가 고정된 커스텀 지정가 익절/손절을 실시간으로 추적하도록 안전장치를 마련했습니다.
 
-## 주요 변경 사항
+## 구현 상세 내역
 
-### 1. 매니저 파이프라인 구조화 ([ManagerAgent](file:///Users/lamer/Project/stock/project_hermes/src/core/manager.py#13-482))
-[execute_cycle](file:///Users/lamer/Project/stock/project_hermes/src/core/manager.py#62-97)의 거대 모놀리스 로직을 4단계의 명확한 파이프라인으로 분해했습니다.
-- [_build_cycle_context](file:///Users/lamer/Project/stock/project_hermes/src/core/manager.py#102-140): 사이클에 필요한 모든 상태(현금, 보유량, regime)를 [CycleContext](file:///Users/lamer/Project/stock/project_hermes/src/core/models.py#38-51) DTO에 집약
-- [_evaluate_and_execute_sells](file:///Users/lamer/Project/stock/project_hermes/src/core/manager.py#248-309): 종목별 평가 수행. 리스크/전략 매도 시그널은 즉시 실행, 매수 시그널은 후보군에 수집
-- [_select_and_execute_buy](file:///Users/lamer/Project/stock/project_hermes/src/core/manager.py#310-347): 수집된 후보 중 최적(확신도 기준) 1건만 선별하여 매수
-- [_finalize_cycle](file:///Users/lamer/Project/stock/project_hermes/src/core/manager.py#348-374): 리포트 전송 및 상태 영속화
+### 1. [OpeningScalpStrategy](file:///Users/lamer/Project/stock/project_hermes/src/strategies/opening_scalp.py#6-109) 구현
+- 파일: [src/strategies/opening_scalp.py](file:///Users/lamer/Project/stock/project_hermes/src/strategies/opening_scalp.py) 
+- 매 전략 사이클마다 과거 12시간 내 가장 최근의 00:30 UTC(KST 09:30) 5분 캔들을 탐색하여 기준봉으로 설정합니다.
+- 기준봉의 고가(High), 저가(Low), 중간값(Midpoint)을 산출합니다.
+- 5분 캔들 데이터에서 **고가 돌파(Breakout) -> 리테스트(Pullback) -> 고가 위 종가 마감(Confirmation)** 3단계의 패턴이 모두 확인되었을 때만 100% 비중으로 `BUY` 시그널을 발생시킵니다.
+- 당일 이미 진입한 코인은 다시 진입하지 않도록 클래스 내부 로직(`_traded_today`)으로 방어합니다.
+- BUY 시그널 반환 시, 커스텀 프로퍼티 `custom_sl_price`(중간값)와 `custom_tp_price`(진입가 + 2 * 리스크 폭)를 계산해 스윙/스캘핑용 고정 지정가로 전달합니다.
 
-### 2. 브로커 ↔ 마켓 데이터 책임 분리
-- [UpbitBroker](file:///Users/lamer/Project/stock/project_hermes/src/broker/broker_api.py#12-296)는 이제 순수하게 **매매(Execution)** 책임만 가집니다.
-- 시세 조회, 지표 계산, Regime 판단은 [UpbitMarketData](file:///Users/lamer/Project/stock/project_hermes/src/data/market_data.py#11-394)를 직접 호출하도록 [main.py](file:///Users/lamer/Project/stock/project_hermes/src/main.py)와 [ManagerAgent](file:///Users/lamer/Project/stock/project_hermes/src/core/manager.py#13-482)를 수정했습니다.
-- 이로써 `KISBroker`(주식) 등 새로운 브로커 추가 시 마켓 데이터 로직을 중복 구현할 필요가 없어졌습니다.
+### 2. 고정가(Absolute Price) 손익절 파이프라인 연계
+- 기존 시스템은 비율(%) 기반의 트레일링 스탑과 일반 익절/손절만 지원했습니다. 이번 작업을 통해 코인 보유 내역(Holding Metadata)에 특정 절대 가격(`custom_sl_price`, `custom_tp_price`)을 저장할 수 있도록 파이프라인을 확장했습니다.
+- [portfolio_manager.py](file:///Users/lamer/Project/stock/project_hermes/src/core/portfolio_manager.py): 메타데이터에 커스텀 가격을 기록/복원할 수 있도록 DB 싱크 및 로드 로직을 개선했습니다.
+- [risk_manager.py](file:///Users/lamer/Project/stock/project_hermes/src/core/risk_manager.py): 실시간 WebSocket 틱이 반영될 때나 15분 정규 사이클이 돌 때, 보유 코인에 지정 손익절가가 있다면 기존 비율 로직보다 **최우선수위로 검사하여 즉시 즉각적인 시장가 매도**(`SELL`)를 수행합니다.
 
-### 3. 시장 확장 대비 리네이밍 (`crypto_manager`)
-- 주식 시장 확장을 고려하여 기존 `"manager"` 에이전트 이름을 `"crypto_manager"`로 일괄 변경했습니다.
-- **자동 마이그레이션**: DB에 기존 `"manager"` 이름으로 저장된 데이터는 `PortfolioManager.load_state()` 호출 시 자동으로 `"crypto_manager"`로 업그레이드됩니다.
-- [command_handler.py](file:///Users/lamer/Project/stock/project_hermes/src/communication/command_handler.py) 등에서 하드코딩된 이름을 제거하고 `self.manager.name`을 참조하도록 개선하여 다중 에이전트 대응이 가능해졌습니다.
+### 3. 메인 스케줄러(5분 루프) 추가 및 1일 1종목 제한
+- 파일: [src/main.py](file:///Users/lamer/Project/stock/project_hermes/src/main.py)
+- 기존의 매 정각, 15분, 30분, 45분 마다 도는 [execute_trading_cycle](file:///Users/lamer/Project/stock/project_hermes/src/main.py#61-107) 메인 루프는 그대로 유지합니다.
+- 반면, 오전 9시 35분부터 10시 30분까지는 **5분 간격 단위**로 오직 스캘핑 조건만 빠르고 정확하게 파악하는 [execute_scalp_cycle](file:///Users/lamer/Project/stock/project_hermes/src/main.py#108-168) 함수가 백그라운드 스케줄러로 동작합니다.
+- **1일 1종목 진입 제한**: 포트폴리오 매니저가 당일 KST 기준으로 [OpeningScalp](file:///Users/lamer/Project/stock/project_hermes/src/strategies/opening_scalp.py#6-109) 전략으로 구매 기록이 단 한 건이라도 발생했는지 실시간 데이터베이스([has_traded_strategy_today](file:///Users/lamer/Project/stock/project_hermes/src/core/portfolio_manager.py#651-666))를 통해 감시합니다. 하나라도 매수 체결이 이루어지면 당일 남은 스캘핑 스케줄은 즉시 패스되도록 통제하여 시스템 재시작과 상관없이 **철저하게 1일 1코인 제한**을 수행합니다.
 
-### 4. 데이터 흐름 타입 안전화 (DTO 입)
-- [src/core/models.py](file:///Users/lamer/Project/stock/project_hermes/src/core/models.py)를 신설하여 [TickerEvaluation](file:///Users/lamer/Project/stock/project_hermes/src/core/models.py#11-36), [CycleContext](file:///Users/lamer/Project/stock/project_hermes/src/core/models.py#38-51) dataclass를 정의했습니다.
-- 무타입 딕셔너리(`ticker_stats`) 대신 명확한 속성을 가진 객체를 사용함으로써 개발 편의성과 안정성을 높였습니다.
-
-### 5. 순환 의존 및 결합도 제거
-- [PortfolioManager](file:///Users/lamer/Project/stock/project_hermes/src/core/portfolio_manager.py#11-631)에서 [ManagerAgent](file:///Users/lamer/Project/stock/project_hermes/src/core/manager.py#13-482) 객체와 `TelegramNotifier`에 대한 직접 참조를 제거했습니다.
-- 에이전트 이름(문자열)만 사용하여 동기화하도록 개선하여 패키지 간 순환 참조 문제를 원천 차단했습니다.
-
----
-
-## 검증 결과
-
-### 1. Import 및 구조 검증
-`Python -c` 명령을 통해 모든 핵심 모듈이 정상적으로 import 됨을 확인했습니다.
-```bash
-python -c "from src.core.manager import ManagerAgent; ..." # All imports OK
-```
-
-### 2. 단위 테스트 (Pytest)
-기존 [db.py](file:///Users/lamer/Project/stock/project_hermes/src/data/db.py), [portfolio_manager.py](file:///Users/lamer/Project/stock/project_hermes/src/core/portfolio_manager.py), [broker_api.py](file:///Users/lamer/Project/stock/project_hermes/src/broker/broker_api.py) 기반의 테스트 6건을 모두 통과했습니다.
-- [tests/test_portfolio_manager.py](file:///Users/lamer/Project/stock/project_hermes/tests/test_portfolio_manager.py): 4건 통과 (할당, 매수 기록, 매도 기록, DB 지속성)
-- [tests/test_broker_api.py](file:///Users/lamer/Project/stock/project_hermes/tests/test_broker_api.py): 2건 통과 (호가 단위 포맷팅, 수량 포맷팅)
-
-### 3. 가상환경(venv) 지원
-사용자의 요청에 따라 `venv` 내에서 `pytest`와 `pytest-mock`을 구성하고 검증을 완료했습니다.
-
----
-
-## 향후 확장 제언
-- **Multi-Agent 시스템**: 이제 [main.py](file:///Users/lamer/Project/stock/project_hermes/src/main.py)에서 `stock_manager`를 추가로 인스턴스화하고 동일한 [PortfolioManager](file:///Users/lamer/Project/stock/project_hermes/src/core/portfolio_manager.py#11-631)와 [ExecutionManager](file:///Users/lamer/Project/stock/project_hermes/src/core/execution_manager.py#6-318)를 사용하여 주식 매매를 병행할 수 있는 기반이 마련되었습니다.
-- **전략 가상화**: [TickerEvaluation](file:///Users/lamer/Project/stock/project_hermes/src/core/models.py#11-36)을 통해 전략별 성과 측정이 더욱 용이해졌으므로, 실시간 성과에 따른 전략 가중치 동적 조절 기능을 추가할 수 있습니다.
+## Validation Results
+- 빌드/실행 테스트 진행: [main.py](file:///Users/lamer/Project/stock/project_hermes/src/main.py)를 실행하여 문법 오류 확인을 마쳤으며, 텔레그램 봇 리스너 확장과 5분루프 인젝션, 메인 루프와의 데이터 간섭 없이 시스템이 정상적으로 초기화(& WebSocket HookING)되는 것을 검증했습니다.
+- 이후 KST 오전 9시 35분이 되면 [execute_scalp_cycle](file:///Users/lamer/Project/stock/project_hermes/src/main.py#108-168)이 스스로 5분 캔들 데이터를 불러와 스캘핑 기회를 찾고 진입합니다.

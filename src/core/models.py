@@ -20,6 +20,8 @@ class TickerEvaluation:
     signal_strength: float
     signal_confidence: float
     current_price: float
+    custom_sl_price: Optional[float] = None
+    custom_tp_price: Optional[float] = None
 
     def to_dict(self) -> dict:
         """기존 ticker_stats dict 호환용"""
@@ -32,6 +34,8 @@ class TickerEvaluation:
             "signal_strength": self.signal_strength,
             "signal_confidence": self.signal_confidence,
             "current_price": self.current_price,
+            "custom_sl_price": self.custom_sl_price,
+            "custom_tp_price": self.custom_tp_price,
         }
 
 

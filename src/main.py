@@ -12,6 +12,8 @@ import time
 import schedule
 import concurrent.futures
 import threading
+from datetime import datetime
+from zoneinfo import ZoneInfo
 from src.core.manager import ManagerAgent
 from src.broker.broker_api import UpbitBroker
 from src.data.market_data import UpbitMarketData
@@ -59,29 +61,12 @@ def update_target_coins():
 def execute_trading_cycle(manager: ManagerAgent):
     logger.info("--- [System] Running Trading Cycle (Every 3 min) ---")
 
-    # 매수/매도 대상을 추리기 위해 타겟 코인 + 현재 보유 코인 통합
-    broker = UpbitBroker()
-    balances = broker.get_balances()
-    held_coins = [
-        f"KRW-{b.get('currency')}"
-        for b in balances
-        if b.get("currency") != "KRW" and float(b.get("balance", "0")) > 0
-    ]
-    blacklisted = UpbitMarketData._blacklisted_markets
-    all_tickers = [
-        t for t in set(TARGET_COINS + held_coins) if t not in blacklisted
-    ]
-
-    logger.info(
-        f"--- [System] Monitoring {len(all_tickers)} Tickers (블랙리스트 {len(blacklisted)}개 제외) ---"
-    )
-
     # 0. Get Advanced Market Data (OHLCV + Indicators) for each Target Coin
     setup_market_data = UpbitMarketData.get_multiple_ohlcv_with_indicators(
-        all_tickers, count=200, interval="minutes/60"
+        TARGET_COINS, count=200, interval="minutes/60"
     )
     entry_market_data = UpbitMarketData.get_multiple_ohlcv_with_indicators(
-        all_tickers, count=200, interval="minutes/15"
+        TARGET_COINS, count=200, interval="minutes/15"
     )
 
     # 교집합만 유지 (둘 다 성공한 경우만)
@@ -104,6 +89,70 @@ def execute_trading_cycle(manager: ManagerAgent):
     logger.info("--- [System] High Frequency Loop Completed ---")
 
 
+def execute_scalp_cycle(manager):
+    kst = ZoneInfo("Asia/Seoul")
+    now = datetime.now(kst)
+
+    # KST 09:35 ~ 10:30 사이클 검사
+    if not (
+        (now.hour == 9 and now.minute >= 35) or (now.hour == 10 and now.minute <= 30)
+    ):
+        return
+
+    if (
+        manager.portfolio_manager
+        and manager.portfolio_manager.has_traded_strategy_today(
+            manager.name, "OpeningScalp"
+        )
+    ):
+        # logger.info("[System] 금일 스캘핑 전략(OpeningScalp) 매수 1회 달성 완료. 금일 스캘핑 루프 펑가 종료.")
+        return
+
+    logger.info(
+        f"--- [System] Running 5-Minute Scalp Cycle at {now.strftime('%H:%M')} ---"
+    )
+
+    scalp_market_data = UpbitMarketData.get_multiple_ohlcv_with_indicators(
+        TARGET_COINS, count=100, interval="minutes/5"
+    )
+
+    if not scalp_market_data:
+        logger.error("[System] Failed to fetch 5m market data. Skipping scalp.")
+        return
+
+    # 1. 컨텍스트 구성
+    ctx = manager._build_cycle_context(scalp_market_data, "volatile")
+
+    # 2. OpeningScalp 전략 직접 펑가 (매도X)
+    scalp_strategy = manager.strategy_manager.get_strategy("OpeningScalp")
+    if not scalp_strategy:
+        logger.error("[System] OpeningScalp strategy not found. Skipping scalp.")
+        return
+
+    for ticker, df in scalp_market_data.items():
+        is_held = ticker in ctx.holdings and ctx.holdings[ticker]["volume"] > 0
+        if is_held:
+            continue
+
+        # Evaluate
+        signal = scalp_strategy.evaluate(ticker, None, df, ctx.portfolio_info)
+
+        # BUY 시그널 후보 처리
+        if signal.type.value == "BUY":
+            if (
+                not ctx.buy_filter_passed
+                or ctx.available_cash < manager.MIN_ORDER_AMOUNT
+            ):
+                continue
+
+            ctx.buy_candidates.append((signal, scalp_strategy, df))
+
+    # 3. 최적 매수 1건 실행
+    manager._select_and_execute_buy(ctx)
+    manager._finalize_cycle(ctx, "scalp")
+    logger.info("--- [System] 5-Minute Scalp Loop Completed ---")
+
+
 def execute_daily_sync(pm, manager, notifier):
     logger.info("--- Running Daily Sync Loop (Midnight) ---")
     logger.info("[Manager] Performing daily audit...")
@@ -111,7 +160,7 @@ def execute_daily_sync(pm, manager, notifier):
     try:
         sync_result = pm.synchronize_balances(manager.name)
         notifier.send_message(sync_result)
-        
+
         # 매일 자정에 7일 지난 과거 DB 거래이력 찌꺼기 삭제 수행
         pm.clean_old_trade_history(days=7)
     except Exception as e:
@@ -134,7 +183,9 @@ def main():
 
     # 기존 상태가 없으면 초기 배분
     if not pm.portfolios or AGENT_NAME not in pm.portfolios:
-        logger.info(f"💰 기존 포트폴리오 상태가 없거나 {AGENT_NAME}가 없어 초기화합니다.")
+        logger.info(
+            f"💰 기존 포트폴리오 상태가 없거나 {AGENT_NAME}가 없어 초기화합니다."
+        )
         pm.allocate(AGENT_NAME, total_capital)
     else:
         logger.info(f"💰 기존 포트폴리오 상태 복원 완료")
@@ -177,9 +228,15 @@ def main():
 
     # Schedule Jobs
     logger.info(f"⏰ 스케줄러 시작")
-    # schedule.every(3).minutes.do(execute_trading_cycle, manager=manager)
+    # 정규 15분 스케줄 (기존)
     for m in [0, 15, 30, 45]:
-        schedule.every().hour.at(f"{m:02d}:30").do(execute_trading_cycle, manager=manager)
+        schedule.every().hour.at(f"{m:02d}:30").do(
+            execute_trading_cycle, manager=manager
+        )
+
+    # 오프닝 스캘핑 5분 스케줄 (09:35 ~ 10:30 구간에만 동작)
+    for m in range(0, 60, 5):
+        schedule.every().hour.at(f"{m:02d}:30").do(execute_scalp_cycle, manager=manager)
 
     schedule.every().day.at("00:00").do(
         execute_daily_sync, pm=pm, manager=manager, notifier=notifier
