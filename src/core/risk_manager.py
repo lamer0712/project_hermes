@@ -61,8 +61,8 @@ class RiskManager:
         atr_14 = holdings[ticker].get("atr_14", 0)
         if atr_14 > 0 and avg_price > 0:
             atr_pct = (atr_14 / avg_price) * 100.0
-            # 동적 스탑로스: ATR의 2.5배 (최소 3%, 최대 15%)
-            stop_loss_pct = -max(3.0, min(15.0, atr_pct * 2.5))
+            # 동적 스탑로스: ATR의 3.0배 (최소 3.5%, 최대 15%)
+            stop_loss_pct = -max(3.5, min(15.0, atr_pct * 3.0))
 
             partial_stop_loss_list = []
             for item in base_partial_sl:
@@ -108,6 +108,20 @@ class RiskManager:
                 strength=1.0,
                 confidence=1.0,
             )
+
+        # 빠른 본절 보호 (Break-even Stop)
+        max_profit_pct = (max_price - avg_price) / avg_price * 100 if avg_price > 0 else 0
+        if max_profit_pct >= 1.5:
+            if profit_pct <= 0.2:
+                profit = (current_price - avg_price) * holdings[ticker]["volume"]
+                reason = f"본절 보호(Break-even): 최대 수익 {max_profit_pct:.2f}% 도달 후 하락 방어"
+                return Signal(
+                    type=SignalType.SELL,
+                    ticker=ticker,
+                    reason=reason,
+                    strength=1.0,
+                    confidence=1.0,
+                )
 
         # 1. 트레일링 스탑
         if trailing_stop_pct is not None and profit_pct >= trailing_start_pct:

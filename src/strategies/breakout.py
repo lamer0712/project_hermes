@@ -110,6 +110,14 @@ class BreakoutStrategy(BaseStrategy):
         # =========================
         # ENTRY (15m)
         # =========================
+        # 거시적 하락세(60분봉 20/50 역배열) 시 가짜 돌파 주의 (필터링)
+        if setup_market_data is not None and not setup_market_data.empty:
+            macro_current = setup_market_data.iloc[-1]
+            macro_ema20 = float(macro_current.get("ema_20", price))
+            macro_ema50 = float(macro_current.get("ema_50", price))
+            if macro_ema20 < macro_ema50:
+                return Signal(SignalType.HOLD, ticker, "진입대기 - 거시 하락장(60m 역배열) 필터링", 0, 0.1)
+
         recent_high = entry_market_data.high.rolling(10).max().iloc[-2]
         prev_prev_close = entry_market_data.close.iloc[-3]
 

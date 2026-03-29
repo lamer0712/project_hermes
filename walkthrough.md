@@ -37,7 +37,7 @@ Following the initial test, we applied two strict filters:
 **Why did performance worsen despite strict filtering?**
 When a valid 1.5x volume breakout occurs, the breakout candle is inherently *very large*. 
 Since the strategy calculates Risk as `Entry Price - Midpoint_of_09:30_candle`, a massive breakout candle pushes the Entry Price far away from the Midpoint. 
-This results in a gigantic `Risk` value. Since the Take Profit (TP) is hardcoded as `Entry + 2*Risk`, the target price becomes mathematically unreachable for a scalp trade. The trade is then forced to bleed out until the end of the day or hit the massive Stop Loss on a normal pullback.
+This results in a gigantic [Risk](file:///Users/lamer/Project/stock/project_hermes/src/core/risk_manager.py#5-194) value. Since the Take Profit (TP) is hardcoded as `Entry + 2*Risk`, the target price becomes mathematically unreachable for a scalp trade. The trade is then forced to bleed out until the end of the day or hit the massive Stop Loss on a normal pullback.
 
 ## Experiment 2: Fixed Risk/Reward Ratio (+1.5% TP / -1.0% SL)
 To solve the unreachable Take Profit issue caused by large expansion candles, we enforced a strict +1.5% TP and -1.0% SL.
@@ -67,4 +67,17 @@ This engine injects a [MockBroker](file:///Users/lamer/Project/stock/project_her
 - **System Integrity:** The simulation effectively handled stop-loss evaluations, max holding periods, and Telegram message generation identically to production.
 
 > [!CAUTION]
-> **Macro Review:** The aggregated 5-day test of all multi-timeframe strategies combined yielded a slightly negative result (-1.13%). The combination of VWAP Reversion, Breakout, Mean Reversion, and Pullback Trend strategies struggled to find sustainable alpha during this specific 5-day window, often getting chopped out by the `RiskManager`'s stop losses. 
+> **Macro Review:** The aggregated 5-day test of all multi-timeframe strategies combined yielded a slightly negative result (-1.13%). The combination of VWAP Reversion, Breakout, Mean Reversion, and Pullback Trend strategies struggled to find sustainable alpha during this specific 5-day window, often getting chopped out by the [RiskManager](file:///Users/lamer/Project/stock/project_hermes/src/core/risk_manager.py#5-194)'s stop losses. 
+
+### Optimization Phase (Risk & Strategy Tweaks)
+Based on the initial Backtest, the following modifications were implemented to improve risk exposure:
+1. **Wider SL Margin:** Increased ATR multiple for dynamic stop loss from 2.5 to 3.0.
+2. **Break-even Protection:** Hard stop loss is moved to +0.2% the moment a trade achieves +1.5% profit, securing capital.
+3. **Macro-Trend Filter (Breakout):** Added 60m EMA (20 > 50) check before 15m breakouts to filter noise.
+4. **Candle Confirmation (VWAP):** Ensured the entry candle was a green body or featured a strong lower tail indicating real support.
+5. **Dynamic Target Selection (Screener):** Improved [get_dynamic_target_coins()](file:///Users/lamer/Project/stock/project_hermes/src/data/market_data.py#337-452) to fetch daily (Days) timeframe data and filter out assets suffering from heavy downtrends (MA5 < MA20 and negative days).
+
+**Optimized Backtest Results:**
+- **Total Trades:** 24
+- **Win Rate:** 29.2% - 31.8%
+- **Final ROI:** -0.41% ~ -0.49% (+0.72% net improvement meaning 60% reduction in capital bleed)

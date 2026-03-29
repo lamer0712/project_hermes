@@ -116,6 +116,22 @@ class VWAPReversionStrategy(BaseStrategy):
                 rsi < self.params["entry"]["rsi_threshold"]  # 38
                 and current_price < bb_lower * 1.02
             ):
+                # 진입 컨펌: 캔들 종가 양봉 혹은 강한 밑꼬리 확인
+                candle_body = abs(df.close.iloc[-1] - df.open.iloc[-1])
+                lower_tail = min(df.close.iloc[-1], df.open.iloc[-1]) - df.low.iloc[-1]
+                
+                is_bullish_close = df.close.iloc[-1] > df.open.iloc[-1]
+                has_long_tail = candle_body > 0 and lower_tail > candle_body * 1.5
+                
+                if not (is_bullish_close or has_long_tail):
+                    return Signal(
+                        SignalType.HOLD, 
+                        ticker, 
+                        "진입대기 - 양봉 지지선(몸통/밑꼬리) 컨펌 대기", 
+                        0, 
+                        score
+                    )
+                    
                 strength = score * self.params["position_size_ratio"]
 
                 rsi_bonus = self.rsi_tiebreaker(rsi, mode="oversold")

@@ -337,12 +337,14 @@ class UpbitMarketData(BaseMarketData):
     @classmethod
     def get_dynamic_target_coins(cls, top_n: int = 20) -> list:
         """
-        [Dynamic Selection]
-        24시간 변화율과 거래대금을 z-score 정규화하여 상위 N개 코인을 반환합니다.
-        /ticker API 한 번으로 모든 데이터를 확보합니다 (추가 API 호출 없음).
+        [Dynamic Selection + Daily Screener]
+        1. 24시간 거래대금 필터 및 1차 스코어 정렬
+        2. 일봉(Days) 데이터를 동시 호출해 정배열(MA5 > MA20) 혹은 전일 대비 상승 유지 여부로 필터링
         """
         headers = {"accept": "application/json"}
-        logger.info(f"[Market Data API] 동적 대상 코인 Top {top_n} 검색 시작...")
+        logger.info(
+            f"[Market Data API] 동적 대상 코인 Top {top_n} 검색 및 일봉 스크리닝 시작..."
+        )
 
         try:
             # 1. KRW 마켓 중 경고 없는 코인만 필터링
@@ -359,22 +361,24 @@ class UpbitMarketData(BaseMarketData):
             ticker_url = f"{cls.BASE_URL}/ticker?markets={','.join(krw_markets)}"
             tickers = requests.get(ticker_url, headers=headers).json()
 
-            # 3. 거래대금 필터 + 스코어링 데이터 추출
+            # 3. 1차 필터링: 거래대금 미달 및 심각한 폭락(-4% 이상) 컷
             stats = []
             for t in tickers:
                 acc_trade = t.get("acc_trade_price_24h", 0)
                 if acc_trade < 5_000_000_000:  # 5,000백만 미만 제외
                     continue
 
-                change_rate = np.tanh(t.get("signed_change_rate", 0) * 3)  # → %
-                volume_score = np.log(acc_trade) * abs(
-                    change_rate
-                )  # log 스케일 거래대금
+                change_rate = t.get("signed_change_rate", 0)
+                if change_rate < -0.04:  # 당일 심각한 하락세 배제
+                    continue
+
+                change_rate_z = np.tanh(change_rate * 3)
+                volume_score = np.log(acc_trade) * abs(change_rate_z)
 
                 stats.append(
                     {
                         "market": t["market"],
-                        "change_rate": change_rate,
+                        "change_rate": change_rate_z,
                         "volume_score": volume_score,
                     }
                 )
@@ -382,7 +386,7 @@ class UpbitMarketData(BaseMarketData):
             if not stats:
                 return ["KRW-BTC", "KRW-ETH"]  # Fallback
 
-            # 4. z-score 정규화 후 가중합
+            # z-score 정규화 후 가중합
             cr = np.array([s["change_rate"] for s in stats])
             vs = np.array([s["volume_score"] for s in stats])
 
@@ -395,14 +399,46 @@ class UpbitMarketData(BaseMarketData):
             for i, s in enumerate(stats):
                 s["score"] = w_cr * cr_norm[i] + w_vs * vs_norm[i]
 
-            # 스코어 높은 순으로 정렬 → 순서 보존 list
             stats.sort(key=lambda x: x["score"], reverse=True)
 
-            # 상위 N개 추출 (순서 보존) + BTC/ETH 보장
-            if regime in ["panic", "volatile"]:
-                top_n = max(5, top_n // 2)
+            # 4. 2차 스크리닝 (일봉 캔들 확인)을 위해 2배수 후보 확보
+            candidate_coins = [s["market"] for s in stats[: top_n * 2]]
 
-            top_coins = [s["market"] for s in stats[:top_n]]
+            logger.info(
+                f"[Market Data API] 1차 스크리닝 {len(candidate_coins)}개 코인 일봉 추세 확인 중..."
+            )
+            daily_data = cls.get_multiple_ohlcv_with_indicators(
+                candidate_coins, count=30, interval="days"
+            )
+
+            top_coins = []
+            for ticker in candidate_coins:
+                df = daily_data.get(ticker)
+                if df is not None and not df.empty and len(df) >= 20:
+                    price = df.close.iloc[-1]
+                    ma5 = df.close.rolling(5).mean().iloc[-1]
+                    ma20 = df.ma_20.iloc[-1]
+
+                    is_aligned = ma5 >= ma20
+                    is_pumping = df.close.iloc[-1] > df.close.iloc[-2]
+
+                    # 지지 정배열이거나 전일 대비 확실히 가격이 오른 경우만 생존
+                    if is_aligned or is_pumping:
+                        if ticker not in top_coins:
+                            top_coins.append(ticker)
+
+                if len(top_coins) >= top_n:
+                    break
+
+            # 개수가 부족하면 상위 후보에서 무조건 채움
+            if len(top_coins) < top_n:
+                for ticker in candidate_coins:
+                    if ticker not in top_coins:
+                        top_coins.append(ticker)
+                    if len(top_coins) >= top_n:
+                        break
+
+            # 핵심 대장주는 스크리너에서 탈락했더라도 무조건 추척 및 체제(Regime) 판별용으로 포함
             for must_have in ["KRW-BTC", "KRW-ETH"]:
                 if must_have not in top_coins:
                     top_coins.append(must_have)
