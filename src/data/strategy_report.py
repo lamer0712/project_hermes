@@ -25,56 +25,88 @@ def load_trades(db_path: str) -> list[dict]:
 
 
 def pair_trades(trades: list[dict]) -> list[dict]:
-    """매수-매도 페어링 (FIFO 방식)"""
-    buy_queue: dict[str, list[dict]] = defaultdict(list)
+    """매수-매도 페어링 (수량 기반 FIFO 방식)"""
+    # 각 티커별 매수 잔량 큐: { ticker: [ { volume_rem, price, executed_funds, paid_fee, strategy, timestamp }, ... ] }
+    buy_queues: dict[str, list[dict]] = defaultdict(list)
     completed_trades = []
 
     for trade in trades:
         ticker = trade["ticker"]
         side = trade["side"]
+        
+        # 실제 체결 데이터 추출 (funds가 없으면 volume * price로 대체)
+        volume = float(trade["volume"] or 0)
+        executed_funds = float(trade["executed_funds"] or (volume * trade["price"]))
+        paid_fee = float(trade["paid_fee"] or 0)
+        
+        if volume <= 0:
+            continue
 
         if side == "buy":
-            buy_queue[ticker].append(trade)
+            buy_queues[ticker].append({
+                "volume_rem": volume,
+                "volume_orig": volume,
+                "price": trade["price"],
+                "executed_funds": executed_funds,
+                "paid_fee": paid_fee,
+                "strategy": trade["strategy"] or "Unknown",
+                "timestamp": trade["timestamp"]
+            })
         elif side == "sell":
-            if buy_queue[ticker]:
-                buy_trade = buy_queue[ticker].pop(0)
-
-                buy_cost = buy_trade["executed_funds"] or (
-                    buy_trade["volume"] * buy_trade["price"]
-                )
-                sell_revenue = trade["executed_funds"] or (
-                    trade["volume"] * trade["price"]
-                )
-
-                buy_fee = buy_trade["paid_fee"] or 0
-                sell_fee = trade["paid_fee"] or 0
-                total_fee = buy_fee + sell_fee
-
-                profit = sell_revenue - sell_fee - buy_cost
-                profit_pct = (profit / buy_cost * 100) if buy_cost > 0 else 0
-
-                strategy = buy_trade["strategy"] or "Unknown"
-
-                buy_time = datetime.fromisoformat(buy_trade["timestamp"])
-                sell_time = datetime.fromisoformat(trade["timestamp"])
+            sell_vol_rem = volume
+            
+            while sell_vol_rem > 1e-10 and buy_queues[ticker]:
+                buy_match = buy_queues[ticker][0]
+                match_vol = min(sell_vol_rem, buy_match["volume_rem"])
+                
+                # 매칭된 수량에 비례하는 매수 원가 및 수수료 계산
+                buy_ratio = match_vol / buy_match["volume_orig"]
+                match_buy_cost = buy_match["executed_funds"] * buy_ratio
+                match_buy_fee = buy_match["paid_fee"] * buy_ratio
+                
+                # 매칭된 수량에 비례하는 매도 매출 및 수수료 계산
+                sell_ratio = match_vol / volume
+                match_sell_revenue = executed_funds * sell_ratio
+                match_sell_fee = paid_fee * sell_ratio
+                
+                # 순 손익 계산
+                total_buy_base = match_buy_cost + match_buy_fee
+                net_sell_revenue = match_sell_revenue - match_sell_fee
+                profit = net_sell_revenue - total_buy_base
+                profit_pct = (profit / total_buy_base * 100) if total_buy_base > 0 else 0
+                
+                # datetime 파싱 시 'Z' 접미사 대응
+                try:
+                    buy_time = datetime.fromisoformat(buy_match["timestamp"].replace("Z", "+00:00"))
+                    sell_time = datetime.fromisoformat(trade["timestamp"].replace("Z", "+00:00"))
+                except ValueError:
+                    # 기본 포맷 실패 시 단순 파싱 시도
+                    buy_time = datetime.fromisoformat(buy_match["timestamp"])
+                    sell_time = datetime.fromisoformat(trade["timestamp"])
+                
                 holding_hours = (sell_time - buy_time).total_seconds() / 3600
 
-                completed_trades.append(
-                    {
-                        "ticker": ticker,
-                        "strategy": strategy,
-                        "buy_price": buy_trade["price"],
-                        "sell_price": trade["price"],
-                        "buy_cost": buy_cost,
-                        "sell_revenue": sell_revenue - sell_fee,
-                        "profit": profit,
-                        "profit_pct": profit_pct,
-                        "total_fee": total_fee,
-                        "buy_time": buy_trade["timestamp"],
-                        "sell_time": trade["timestamp"],
-                        "holding_hours": holding_hours,
-                    }
-                )
+                completed_trades.append({
+                    "ticker": ticker,
+                    "strategy": buy_match["strategy"],
+                    "buy_price": buy_match["price"],
+                    "sell_price": trade["price"],
+                    "buy_cost": total_buy_base,
+                    "sell_revenue": net_sell_revenue,
+                    "profit": profit,
+                    "profit_pct": profit_pct,
+                    "total_fee": match_buy_fee + match_sell_fee,
+                    "buy_time": buy_match["timestamp"],
+                    "sell_time": trade["timestamp"],
+                    "holding_hours": max(0, holding_hours),
+                })
+                
+                # 잔량 업데이트
+                sell_vol_rem -= match_vol
+                buy_match["volume_rem"] -= match_vol
+                
+                if buy_match["volume_rem"] < 1e-10:
+                    buy_queues[ticker].pop(0)
 
     return completed_trades
 

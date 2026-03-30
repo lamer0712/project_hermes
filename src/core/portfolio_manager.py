@@ -201,13 +201,15 @@ class PortfolioManager:
         if ticker in holdings:
             # 기존 보유 종목 데이터 갱신
             existing = holdings[ticker]
-            new_total = existing["total_cost"] + total_cost_excluding_fee
+            # 수수료를 포함한 총 취득 원가 계산 (True Cost Basis)
+            new_total_cost = existing["total_cost"] + total_cost_including_fee
             new_volume = existing["volume"] + volume
+            
             # 기존 max_price 및 분할손절 단계 유지
             holdings[ticker] = {
                 "volume": new_volume,
-                "avg_price": new_total / new_volume if new_volume > 0 else 0,
-                "total_cost": new_total,
+                "avg_price": new_total_cost / new_volume if new_volume > 0 else 0,
+                "total_cost": new_total_cost,
                 "max_price": existing.get("max_price", price),
                 "sl_levels_hit": existing.get("sl_levels_hit", []),
                 "tp_levels_hit": existing.get("tp_levels_hit", []),
@@ -217,10 +219,11 @@ class PortfolioManager:
                 "custom_tp_price": existing.get("custom_tp_price", None),
             }
         else:
+            # 수수료를 포함하여 평단가(Breakeven) 및 총 원점 설정
             holdings[ticker] = {
                 "volume": volume,
-                "avg_price": total_cost_excluding_fee / volume if volume > 0 else price,
-                "total_cost": total_cost_excluding_fee,
+                "avg_price": total_cost_including_fee / volume if volume > 0 else price,
+                "total_cost": total_cost_including_fee,
                 "max_price": price,
                 "sl_levels_hit": [],
                 "tp_levels_hit": [],
