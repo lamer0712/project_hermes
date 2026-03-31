@@ -320,11 +320,26 @@ class ManagerAgent:
         ctx.buy_candidates.sort(key=lambda x: x[0].confidence, reverse=True)
 
         for cand_signal, cand_strategy, cand_market_data in ctx.buy_candidates:
+            # 보유 종목 수 제한 확인
+            if len(self.portfolio_manager.get_holdings(self.name)) >= self.MAX_POSITIONS:
+                logger.info(f"[ManagerAgent] 최대 보유 종목 수({self.MAX_POSITIONS}) 도달로 매수 중단.")
+                break
+
             if cand_signal.confidence <= 0.3:
                 break
 
             ticker = cand_signal.ticker
+            # 이미 이번 사이클에서 매수했거나 보유 중인 종목 스킵
+            if ticker in self.portfolio_manager.get_holdings(self.name):
+                continue
+
             current_price = float(cand_market_data.close.iloc[-1])
+            available_cash = self.portfolio_manager.get_available_cash(self.name)
+            
+            if available_cash < self.MIN_ORDER_AMOUNT:
+                logger.info(f"[ManagerAgent] 잔고 부족({available_cash:,.0f} < {self.MIN_ORDER_AMOUNT})으로 매수 종료.")
+                break
+
             atr = (
                 float(cand_market_data["atr_14"].iloc[-1])
                 if "atr_14" in cand_market_data
@@ -348,9 +363,8 @@ class ManagerAgent:
 
             if success:
                 logger.info(
-                    f"[ManagerAgent] {ticker} 매수 접수 성공. 후순위 매수 후보 기각."
+                    f"[ManagerAgent] {ticker} 매수 접수 성공. 다음 후보 검토..."
                 )
-                break
 
     def _finalize_cycle(self, ctx: CycleContext, market_regime: str) -> None:
         """대기주문 확인, 리포트 전송, 포트폴리오 상태 저장을 수행합니다."""

@@ -82,7 +82,12 @@ class BollingerSqueezeStrategy(BaseStrategy):
 
         macro = setup_market_data.iloc[-1]
         bw = float(macro.get("bb_width", 1.0))
-        bw_ma = setup_market_data["bb_width"].rolling(20).mean().iloc[-1]
+
+        # Safe rolling calculation
+        if "bb_width" in setup_market_data.columns:
+            bw_ma = setup_market_data["bb_width"].rolling(20).mean().iloc[-1]
+        else:
+            bw_ma = bw  # Fallback if column still missing
 
         # Squeeze check: current bandwidth < 20-period avg bandwidth
         is_squeeze = bw < bw_ma * 0.9 or bw < self.params["setup"]["bw_threshold"]

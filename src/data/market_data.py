@@ -273,6 +273,7 @@ class UpbitMarketData(BaseMarketData):
         df["bb_upper"], df["bb_mid"], df["bb_lower"] = talib.BBANDS(
             close, timeperiod=20, nbdevup=2, nbdevdn=2
         )
+        df["bb_width"] = (df["bb_upper"] - df["bb_lower"]) / (df["bb_mid"] + 1e-8)
         df["bb_position"] = (close - df["bb_lower"]) / (df["bb_upper"] - df["bb_lower"])
 
         ## ATR
