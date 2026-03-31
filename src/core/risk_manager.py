@@ -123,20 +123,20 @@ class RiskManager:
                     confidence=1.0,
                 )
 
-        # 분할 익절 (Partial Take Profit - 1:1 RR 구간)
+        # 분할 익절 (Partial Take Profit - 1.7:1 RR 구간)
         initial_entry = holdings[ticker].get("initial_entry_price", avg_price)
         initial_sl = holdings[ticker].get("initial_sl_price")
         tp_levels_hit = holdings[ticker].get("tp_levels_hit", [])
 
         if initial_sl is not None and initial_entry > initial_sl:
             risk_amount = initial_entry - initial_sl
-            rr_1_1_target = initial_entry + risk_amount
+            rr_target = initial_entry + (risk_amount * 1.7)
             
-            if current_price >= rr_1_1_target and "1:1_RR" not in tp_levels_hit:
+            if current_price >= rr_target and "Partial_TP_1" not in tp_levels_hit:
                 profit = (current_price - avg_price) * holdings[ticker]["volume"]
-                reason = f"분할 익절(1:1 RR): 수익률 {profit_pct:.2f}%, {profit:,.0f}원, 목표가({rr_1_1_target:,.0f}) 도달"
+                reason = f"분할 익절(1.7:1 RR): 수익률 {profit_pct:.2f}%, {profit:,.0f}원, 목표가({rr_target:,.0f}) 도달"
                 self.portfolio_manager.update_holding_metadata(
-                    agent_name, ticker, hit_tp_level="1:1_RR"
+                    agent_name, ticker, hit_tp_level="Partial_TP_1"
                 )
                 return Signal(
                     type=SignalType.SELL,
