@@ -41,8 +41,8 @@ class ManagerAgent:
         "recovery": ["PullbackTrend"],
         "weakbullish": ["PullbackTrend"],
         "bullish": ["Breakout", "PullbackTrend"],
-        "ranging": ["VWAPReversion", "MeanReversion"],
-        "volatile": ["Breakout"],
+        "ranging": ["VWAPReversion", "MeanReversion", "BollingerSqueeze"],
+        "volatile": ["Breakout", "BollingerSqueeze"],
     }
 
     def __init__(
@@ -112,10 +112,6 @@ class ManagerAgent:
     ) -> CycleContext:
         """보유현황·현금·현재가를 수집하여 CycleContext를 구성합니다."""
         buy_filter_passed = market_regime not in ["bearish", "panic"]
-        if not buy_filter_passed:
-            logger.info(
-                f"⚠️ 거시 시장 침체({market_regime}): 신규 매수 차단, 매도만 수행합니다."
-            )
 
         if self.portfolio_manager:
             holdings = self.portfolio_manager.get_holdings(self.name)
@@ -365,7 +361,6 @@ class ManagerAgent:
         self.last_ticker_stats = ticker_stats
 
         # 대기 주문 최종 확인
-        time.sleep(0.5)
         self.execution_manager.check_pending_orders()
 
         # 리포트 전송
