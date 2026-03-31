@@ -5,6 +5,7 @@ import json
 import math
 import traceback
 import glob
+import fcntl
 from dotenv import load_dotenv
 
 load_dotenv(override=True)
@@ -167,10 +168,25 @@ def execute_daily_sync(pm, manager, notifier):
         logger.error(f"Daily sync error: {e}")
 
 
+def acquire_single_instance_lock():
+    lock_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "logs", "hermes.lock")
+    os.makedirs(os.path.dirname(lock_file), exist_ok=True)
+    fp = open(lock_file, "w")
+    try:
+        fcntl.flock(fp, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except IOError:
+        logger.error("🚨 [System] Another instance of Project Hermes is already running.")
+        sys.exit(1)
+    return fp
+
+
 def main():
     logger.info("=" * 60)
     logger.info("🏢 Project Hermes start")
     logger.info("=" * 60)
+    
+    # 0. 단일 인스턴스 락 확인
+    _lock_fp = acquire_single_instance_lock()
 
     # 0. 텔레그램 알림 초기화
     notifier = TelegramNotifier()
