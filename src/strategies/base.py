@@ -73,6 +73,22 @@ class BaseStrategy(ABC):
     # --------------------------------------------------
 
     @staticmethod
+    def is_bullish_trend_htf(df):
+        """상위 타임프레임(1h) 정배열 확인 (EMA 20 > 50 > 200)"""
+        if df is None or df.empty or len(df) < 5:
+            return True # 데이터 없으면 필터링 안 함
+
+        current = df.iloc[-1]
+        ema20 = float(current.get("ema_20", 0))
+        ema50 = float(current.get("ema_50", 0))
+        ema200 = float(current.get("ema_200", 0))
+
+        if ema20 == 0 or ema50 == 0 or ema200 == 0:
+            return True
+
+        return ema20 > ema50 > ema200
+
+    @staticmethod
     def is_downtrend(df):
         ema20 = df["ema_20"].iloc[-1]
         ema50 = df["ema_50"].iloc[-1]
@@ -80,6 +96,26 @@ class BaseStrategy(ABC):
 
         # 단순히 20 < 50이 아니라, 장기 이평선(60)까지 고려하여 더 확실한 하락일 때만 downtrend로 판정
         return ema20 < ema50 and ema50 < ema60
+
+    @staticmethod
+    def is_volume_confirmed(df, multiplier=1.5):
+        """거래량 컨펌 확인 (현재 거래량 > 평균 거래량 * multiplier)"""
+        if df is None or len(df) < 20:
+            return True
+        
+        current_vol = float(df["volume"].iloc[-1])
+        vol_ma = float(df.get("volume_ma20", df["volume"].rolling(20).mean()).iloc[-1])
+        
+        return current_vol > vol_ma * multiplier
+
+    @staticmethod
+    def is_not_overbought(df, threshold=70):
+        """RSI 과매수 구역 제외 확인 (현재 RSI < threshold)"""
+        if df is None or "rsi_14" not in df.columns:
+            return True
+            
+        current_rsi = float(df["rsi_14"].iloc[-1])
+        return current_rsi < threshold
 
     @staticmethod
     def is_fake_dip(df):

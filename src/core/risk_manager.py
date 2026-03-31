@@ -111,15 +111,38 @@ class RiskManager:
 
         # 빠른 본절 보호 (Break-even Stop)
         max_profit_pct = (max_price - avg_price) / avg_price * 100 if avg_price > 0 else 0
-        if max_profit_pct >= 2.5:
-            if profit_pct <= 0.5:
+        if max_profit_pct >= 1.0:
+            if profit_pct <= 0.1:
                 profit = (current_price - avg_price) * holdings[ticker]["volume"]
-                reason = f"본절 보호(Break-even): 최대 수익 {max_profit_pct:.2f}% 도달 후 하락 방어 (0.5% 보존)"
+                reason = f"본절 보호(Break-even): 최대 수익 {max_profit_pct:.2f}% 도달 후 하락 방어 (본절 탈출)"
                 return Signal(
                     type=SignalType.SELL,
                     ticker=ticker,
                     reason=reason,
                     strength=1.0,
+                    confidence=1.0,
+                )
+
+        # 분할 익절 (Partial Take Profit - 1:1 RR 구간)
+        initial_entry = holdings[ticker].get("initial_entry_price", avg_price)
+        initial_sl = holdings[ticker].get("initial_sl_price")
+        tp_levels_hit = holdings[ticker].get("tp_levels_hit", [])
+
+        if initial_sl is not None and initial_entry > initial_sl:
+            risk_amount = initial_entry - initial_sl
+            rr_1_1_target = initial_entry + risk_amount
+            
+            if current_price >= rr_1_1_target and "1:1_RR" not in tp_levels_hit:
+                profit = (current_price - avg_price) * holdings[ticker]["volume"]
+                reason = f"분할 익절(1:1 RR): 수익률 {profit_pct:.2f}%, {profit:,.0f}원, 목표가({rr_1_1_target:,.0f}) 도달"
+                self.portfolio_manager.update_holding_metadata(
+                    agent_name, ticker, hit_tp_level="1:1_RR"
+                )
+                return Signal(
+                    type=SignalType.SELL,
+                    ticker=ticker,
+                    reason=reason,
+                    strength=0.5,
                     confidence=1.0,
                 )
 

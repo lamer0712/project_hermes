@@ -39,6 +39,10 @@ class DatabaseManager:
                     available_cash REAL DEFAULT 0,
                     total_trades INTEGER DEFAULT 0,
                     winning_trades INTEGER DEFAULT 0,
+                    total_gross_profit REAL DEFAULT 0,
+                    total_gross_loss REAL DEFAULT 0,
+                    peak_value REAL DEFAULT 0,
+                    max_drawdown REAL DEFAULT 0,
                     is_halted BOOLEAN DEFAULT 0,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -52,6 +56,14 @@ class DatabaseManager:
                 cursor.execute('ALTER TABLE portfolios ADD COLUMN total_trades INTEGER DEFAULT 0')
             if 'winning_trades' not in columns:
                 cursor.execute('ALTER TABLE portfolios ADD COLUMN winning_trades INTEGER DEFAULT 0')
+            if 'total_gross_profit' not in columns:
+                cursor.execute('ALTER TABLE portfolios ADD COLUMN total_gross_profit REAL DEFAULT 0')
+            if 'total_gross_loss' not in columns:
+                cursor.execute('ALTER TABLE portfolios ADD COLUMN total_gross_loss REAL DEFAULT 0')
+            if 'peak_value' not in columns:
+                cursor.execute('ALTER TABLE portfolios ADD COLUMN peak_value REAL DEFAULT 0')
+            if 'max_drawdown' not in columns:
+                cursor.execute('ALTER TABLE portfolios ADD COLUMN max_drawdown REAL DEFAULT 0')
             
             # 포트폴리오별 보유 종목 상세 내역
             cursor.execute('''
@@ -99,13 +111,17 @@ class DatabaseManager:
         with self.get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute('''
-                INSERT INTO portfolios (agent_name, allocated_capital, available_cash, total_trades, winning_trades, is_halted, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                INSERT INTO portfolios (agent_name, allocated_capital, available_cash, total_trades, winning_trades, total_gross_profit, total_gross_loss, peak_value, max_drawdown, is_halted, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
                 ON CONFLICT(agent_name) DO UPDATE SET
                     allocated_capital=excluded.allocated_capital,
                     available_cash=excluded.available_cash,
                     total_trades=excluded.total_trades,
                     winning_trades=excluded.winning_trades,
+                    total_gross_profit=excluded.total_gross_profit,
+                    total_gross_loss=excluded.total_gross_loss,
+                    peak_value=excluded.peak_value,
+                    max_drawdown=excluded.max_drawdown,
                     is_halted=excluded.is_halted,
                     updated_at=CURRENT_TIMESTAMP
             ''', (
@@ -114,6 +130,10 @@ class DatabaseManager:
                 data.get("available_cash", 0),
                 data.get("total_trades", 0),
                 data.get("winning_trades", 0),
+                data.get("total_gross_profit", 0),
+                data.get("total_gross_loss", 0),
+                data.get("peak_value", 0),
+                data.get("max_drawdown", 0),
                 1 if data.get("is_halted", False) else 0
             ))
 
@@ -175,6 +195,10 @@ class DatabaseManager:
                     "available_cash": row['available_cash'],
                     "total_trades": row['total_trades'] if 'total_trades' in row.keys() else 0,
                     "winning_trades": row['winning_trades'] if 'winning_trades' in row.keys() else 0,
+                    "total_gross_profit": row['total_gross_profit'] if 'total_gross_profit' in row.keys() else 0,
+                    "total_gross_loss": row['total_gross_loss'] if 'total_gross_loss' in row.keys() else 0,
+                    "peak_value": row['peak_value'] if 'peak_value' in row.keys() else 0,
+                    "max_drawdown": row['max_drawdown'] if 'max_drawdown' in row.keys() else 0,
                     "is_halted": bool(row['is_halted']),
                     "holdings": {}
                 }

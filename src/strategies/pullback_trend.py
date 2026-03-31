@@ -107,6 +107,19 @@ class PullbackTrendStrategy(BaseStrategy):
 
         setup_cfg = self.params["setup"]
 
+        # 상위 타임프레임(1h) 정배열 필터링 추가
+        if not self.is_bullish_trend_htf(setup_market_data):
+            return Signal(SignalType.HOLD, ticker, "진입대기 - 상위 타임프레임(1h) 역배열 필터링", 0, 0.01)
+
+        # 거래량 필터링 (1.4배 - 기존 파라미터 활용)
+        vol_mult = self.params["entry"].get("volume_multiplier", 1.4)
+        if not self.is_volume_confirmed(entry_market_data, multiplier=vol_mult):
+            return Signal(SignalType.HOLD, ticker, "진입대기 - 거래량 컨펌 부족", 0, 0.01)
+
+        # RSI 과매수 필터링 (70 이상 제외)
+        if not self.is_not_overbought(entry_market_data, threshold=70):
+            return Signal(SignalType.HOLD, ticker, "진입대기 - RSI 과매수 구역", 0, 0.01)
+
         setup_ok = (
             rsi_setup < setup_cfg["rsi_threshold"]
             and bb_pos < setup_cfg["bb_position_threshold"]

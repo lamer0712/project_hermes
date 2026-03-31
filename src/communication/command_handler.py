@@ -248,7 +248,9 @@ class CommandQueueHandler:
             msg += f"현금: {s['cash']:,.0f} KRW\n"
             msg += f"총액: {s['total_value']:,.0f} KRW\n"
             msg += f"수익률: {s['return_rate']:+.2f}%\n"
-            msg += f"매매: {s['total_trades']}회 (승률 {s['win_rate']:.0f}%)\n\n"
+            msg += f"낙폭(MDD): -{s['max_drawdown']:.2f}%\n"
+            msg += f"매매: {s['total_trades']}회 (승률 {s['win_rate']:.0f}%)\n"
+            msg += f"PF: {s['profit_factor']:.2f} | 손익비: {s['risk_reward_ratio']:.2f}\n\n"
 
             msg += "*보유 종목*\n"
             holdings = s.get("holdings", {})

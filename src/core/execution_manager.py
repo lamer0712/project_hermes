@@ -94,12 +94,15 @@ class ExecutionManager:
 
                         custom_sl_price = order_data.get("custom_sl_price")
                         custom_tp_price = order_data.get("custom_tp_price")
-                        if custom_sl_price is not None or custom_tp_price is not None:
+                        initial_sl_price = order_data.get("initial_sl_price")
+                        
+                        if custom_sl_price is not None or custom_tp_price is not None or initial_sl_price is not None:
                             self.portfolio_manager.update_holding_metadata(
                                 agent_name,
                                 ticker,
                                 custom_sl_price=custom_sl_price,
                                 custom_tp_price=custom_tp_price,
+                                initial_sl_price=initial_sl_price,
                             )
 
                         if msg and isinstance(msg, str):
@@ -236,6 +239,10 @@ class ExecutionManager:
                         signal.custom_tp_price
                         if hasattr(signal, "custom_tp_price")
                         else None
+                    ),
+                    "initial_sl_price": (
+                        signal.custom_sl_price if hasattr(signal, "custom_sl_price") and signal.custom_sl_price 
+                        else current_price * (1 + stop_loss_pct / 100.0)
                     ),
                     "volume": order_amount / current_price,  # fallback obj
                     "reason": signal.reason if hasattr(signal, "reason") else "",

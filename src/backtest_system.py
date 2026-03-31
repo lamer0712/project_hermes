@@ -249,6 +249,8 @@ def fetch_and_prepare_historical_data(
         df["vwap"] = pv.rolling(window).sum() / (volume.rolling(window).sum() + 1e-8)
         df["ema_20"] = talib.EMA(close, timeperiod=20)
         df["ema_50"] = talib.EMA(close, timeperiod=50)
+        df["ema_200"] = talib.EMA(close, timeperiod=200)
+        df["ema_50"] = talib.EMA(close, timeperiod=50)
         df["change_5"] = df["close"].pct_change(5) * 100
 
     except Exception as e:
@@ -281,6 +283,8 @@ def backtest_system(days: int = 5):
     manager.notifier = MockNotifier()
     manager.execution_manager.broker = manager.broker
     manager.execution_manager.notifier = manager.notifier
+    
+    value_history = []
 
     # 2. 동적 타겟 코인 및 데이터 준비
     tickers = UpbitMarketData.get_dynamic_target_coins(10)
@@ -372,6 +376,10 @@ def backtest_system(days: int = 5):
 
         # 실제 사이클 수행
         manager.execute_cycle(setup_slice, entry_slice, regime)
+        
+        # 자산 가치 기록 (MDD 계산용)
+        current_total = pm.get_total_value("crypto_manager")
+        value_history.append(current_total)
 
     # 로깅 레벨 복구
     if "original_log_level" in locals():
@@ -390,6 +398,14 @@ def backtest_system(days: int = 5):
 
                 pm.record_sell("crypto_manager", ticker, h["volume"], final_price)
 
+    def calculate_mdd(history):
+        if not history:
+            return 0.0
+        df = pd.Series(history)
+        peak = df.cummax()
+        drawdown = (df - peak) / peak
+        return drawdown.min() * 100
+
     # 최종 리포트 출력
     logger.info("========== 시스템 백테스트 완료 ==========")
 
@@ -402,6 +418,11 @@ def backtest_system(days: int = 5):
     )
     logger.info(f"총 매매 횟수: {summary['total_trades']}")
     logger.info(f"승률: {summary['win_rate']:.1f}%")
+    logger.info(f"Profit Factor: {summary['profit_factor']:.2f}")
+    logger.info(f"손익비 (RR): {summary['risk_reward_ratio']:.2f}")
+    
+    mdd = calculate_mdd(value_history)
+    logger.info(f"최대 낙폭 (MDD): {mdd:+.2f}%")
 
     if summary["holdings"]:
         logger.info("\n[현재 가상 보유 종목]")

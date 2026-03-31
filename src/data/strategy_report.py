@@ -120,6 +120,8 @@ def analyze_by_strategy(completed_trades: list[dict]) -> dict:
             "total_cost": 0,
             "wins": 0,
             "losses": 0,
+            "win_profit": 0,
+            "loss_loss": 0,
             "total_fee": 0,
             "holding_hours": [],
         }
@@ -135,8 +137,10 @@ def analyze_by_strategy(completed_trades: list[dict]) -> dict:
         stats["holding_hours"].append(trade["holding_hours"])
         if trade["profit"] > 0:
             stats["wins"] += 1
+            stats["win_profit"] += trade["profit"]
         else:
             stats["losses"] += 1
+            stats["loss_loss"] += abs(trade["profit"])
 
     return dict(strategy_stats)
 
@@ -164,14 +168,25 @@ def generate_report(db_path: str = None) -> str:
     total_fee = sum(t["total_fee"] for t in completed)
     total_wins = sum(1 for t in completed if t["profit"] > 0)
     total_losses = sum(1 for t in completed if t["profit"] <= 0)
+    
+    total_win_profit = sum(t["profit"] for t in completed if t["profit"] > 0)
+    total_loss_loss = sum(abs(t["profit"]) for t in completed if t["profit"] <= 0)
+    
     win_rate = total_wins / max(1, total_wins + total_losses) * 100
     roi = total_profit / max(1, total_cost) * 100
+    
+    # Global PF & RR
+    pf = total_win_profit / total_loss_loss if total_loss_loss > 0 else (float('inf') if total_win_profit > 0 else 0)
+    avg_win = total_win_profit / total_wins if total_wins > 0 else 0
+    avg_loss = total_loss_loss / total_losses if total_losses > 0 else 0
+    rr = avg_win / avg_loss if avg_loss > 0 else (float('inf') if avg_win > 0 else 0)
 
     lines = []
     lines.append("📊 전략별 수익률 리포트")
     lines.append(f"총 {len(completed)}건 왕복 거래")
     lines.append(f"총 손익: {total_profit:+,.0f} KRW ({roi:+.2f}%)")
     lines.append(f"승률: {total_wins}W/{total_losses}L ({win_rate:.0f}%)")
+    lines.append(f"PF: {pf:.2f} | 손익비: {rr:.2f}")
     lines.append(f"수수료: {total_fee:,.0f} KRW")
     lines.append("")
 
@@ -183,6 +198,13 @@ def generate_report(db_path: str = None) -> str:
         wins = st["wins"]
         losses = st["losses"]
         wr = wins / max(1, count) * 100
+        
+        # Strategy PF & RR
+        st_pf = st["win_profit"] / st["loss_loss"] if st["loss_loss"] > 0 else (float('inf') if st["win_profit"] > 0 else 0)
+        st_avg_win = st["win_profit"] / wins if wins > 0 else 0
+        st_avg_loss = st["loss_loss"] / losses if losses > 0 else 0
+        st_rr = st_avg_win / st_avg_loss if st_avg_loss > 0 else (float('inf') if st_avg_win > 0 else 0)
+
         avg_pct = sum(t["profit_pct"] for t in st["trades"]) / max(1, count)
         avg_hold = sum(st["holding_hours"]) / max(1, count)
         max_win = max((t["profit_pct"] for t in st["trades"]), default=0)
@@ -193,6 +215,7 @@ def generate_report(db_path: str = None) -> str:
         lines.append(f"{emoji} {strategy} ({count}건)")
         lines.append(f"  손익: {st['total_profit']:+,.0f} (평균 {avg_pct:+.2f}%)")
         lines.append(f"  승률: {wins}W/{losses}L ({wr:.0f}%)")
+        lines.append(f"  PF: {st_pf:.2f} | 손익비: {st_rr:.2f}")
         lines.append(f"  최대: +{max_win:.2f}% / {max_loss:.2f}%")
         lines.append(f"  보유: 평균 {avg_hold:.1f}h")
 

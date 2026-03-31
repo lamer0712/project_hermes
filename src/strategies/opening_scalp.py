@@ -98,6 +98,18 @@ class OpeningScalpStrategy(BaseStrategy):
         entry_price = float(latest_post_candle["close"])
         midpoint = (reference_high + reference_low) / 2.0
 
+        # 상위 타임프레임(1h) 정배열 필터링 추가
+        if not self.is_bullish_trend_htf(setup_market_data):
+            return Signal(SignalType.HOLD, ticker, "진입대기 - 상위 타임프레임(1h) 역배열 필터링", 0, conf)
+
+        # 거래량 필터링 (1.5배)
+        if not self.is_volume_confirmed(entry_market_data, multiplier=1.5):
+            return Signal(SignalType.HOLD, ticker, "진입대기 - 거래량 컨펌 부족", 0, conf)
+
+        # RSI 과매수 필터링 (70 이상 제외)
+        if not self.is_not_overbought(entry_market_data, threshold=70):
+            return Signal(SignalType.HOLD, ticker, "진입대기 - RSI 과매수 구역", 0, conf)
+
         sig = Signal(
             type=SignalType.BUY,
             ticker=ticker,

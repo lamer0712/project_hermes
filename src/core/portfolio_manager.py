@@ -52,6 +52,10 @@ class PortfolioManager:
                             "initial_capital": pb["allocated_capital"],
                             "total_trades": pb.get("total_trades", 0),
                             "winning_trades": pb.get("winning_trades", 0),
+                            "total_gross_profit": pb.get("total_gross_profit", 0),
+                            "total_gross_loss": pb.get("total_gross_loss", 0),
+                            "peak_value": pb.get("peak_value", 0),
+                            "max_drawdown": pb.get("max_drawdown", 0),
                             "is_halted": pb["is_halted"],
                         }
                     else:
@@ -66,6 +70,22 @@ class PortfolioManager:
                         self.portfolios[agent_name]["winning_trades"] = pb.get(
                             "winning_trades",
                             self.portfolios[agent_name].get("winning_trades", 0),
+                        )
+                        self.portfolios[agent_name]["total_gross_profit"] = pb.get(
+                            "total_gross_profit",
+                            self.portfolios[agent_name].get("total_gross_profit", 0),
+                        )
+                        self.portfolios[agent_name]["total_gross_loss"] = pb.get(
+                            "total_gross_loss",
+                            self.portfolios[agent_name].get("total_gross_loss", 0),
+                        )
+                        self.portfolios[agent_name]["peak_value"] = pb.get(
+                            "peak_value",
+                            self.portfolios[agent_name].get("peak_value", 0),
+                        )
+                        self.portfolios[agent_name]["max_drawdown"] = pb.get(
+                            "max_drawdown",
+                            self.portfolios[agent_name].get("max_drawdown", 0),
                         )
                         self.portfolios[agent_name]["is_halted"] = pb["is_halted"]
 
@@ -104,6 +124,10 @@ class PortfolioManager:
                         "available_cash": p["cash"],
                         "total_trades": p.get("total_trades", 0),
                         "winning_trades": p.get("winning_trades", 0),
+                        "total_gross_profit": p.get("total_gross_profit", 0),
+                        "total_gross_loss": p.get("total_gross_loss", 0),
+                        "peak_value": p.get("peak_value", 0),
+                        "max_drawdown": p.get("max_drawdown", 0),
                         "is_halted": p["is_halted"],
                     },
                 )
@@ -120,6 +144,10 @@ class PortfolioManager:
                 "initial_capital": amount,
                 "total_trades": 0,
                 "winning_trades": 0,
+                "total_gross_profit": 0.0,
+                "total_gross_loss": 0.0,
+                "peak_value": amount,
+                "max_drawdown": 0.0,
                 "is_halted": False,
             }
         else:
@@ -225,6 +253,8 @@ class PortfolioManager:
                 "avg_price": total_cost_including_fee / volume if volume > 0 else price,
                 "total_cost": total_cost_including_fee,
                 "max_price": price,
+                "initial_entry_price": price,
+                "initial_sl_price": None,
                 "sl_levels_hit": [],
                 "tp_levels_hit": [],
                 "atr_14": 0,
@@ -303,6 +333,9 @@ class PortfolioManager:
         portfolio["total_trades"] = portfolio.get("total_trades", 0) + 1
         if profit > 0:
             portfolio["winning_trades"] = portfolio.get("winning_trades", 0) + 1
+            portfolio["total_gross_profit"] = portfolio.get("total_gross_profit", 0) + profit
+        elif profit < 0:
+            portfolio["total_gross_loss"] = portfolio.get("total_gross_loss", 0) + abs(profit)
 
         self.save_state()
         self.db.record_trade(
@@ -373,6 +406,7 @@ class PortfolioManager:
         atr_14: float = None,
         custom_sl_price: float = None,
         custom_tp_price: float = None,
+        initial_sl_price: float = None,
     ) -> bool:
         """
         보유 종목의 최대 가격(Trailing Stop용)과 도달한 손절 단계(Partial Stop Loss용)를 업데이트합니다.
@@ -419,6 +453,10 @@ class PortfolioManager:
             holding["custom_tp_price"] = custom_tp_price
             modified = True
 
+        if initial_sl_price is not None:
+            holding["initial_sl_price"] = initial_sl_price
+            modified = True
+
         if modified:
             self.save_state()
 
@@ -439,6 +477,44 @@ class PortfolioManager:
                 # 현재가 정보가 없을 경우 매입가 기준 평가
                 total += holding["volume"] * holding["avg_price"]
 
+        # 자산 가치가 계산될 때마다 MDD 업데이트 시도
+        self.update_drawdown(agent_name, total)
+        return total
+
+    def update_drawdown(self, agent_name: str, current_total_value: float):
+        """현재 총 자산 가치를 바탕으로 Peak 및 MDD를 업데이트합니다."""
+        if agent_name not in self.portfolios:
+            return
+
+        portfolio = self.portfolios[agent_name]
+        
+        # 최초 실행 시 peak_value 초기화
+        if portfolio.get("peak_value", 0) == 0:
+            portfolio["peak_value"] = current_total_value
+            return
+
+        # 고점 갱신
+        if current_total_value > portfolio["peak_value"]:
+            portfolio["peak_value"] = current_total_value
+            self.save_state()
+        else:
+            # 낙폭 계산
+            drawdown = (portfolio["peak_value"] - current_total_value) / portfolio["peak_value"] * 100
+            if drawdown > portfolio.get("max_drawdown", 0):
+                portfolio["max_drawdown"] = drawdown
+                self.save_state()
+
+    def get_total_value_no_update(self, agent_name: str, current_prices: dict = None) -> float:
+        """MDD 업데이트 없이 총 자산 가치만 반환 (내부 루프용)"""
+        if agent_name not in self.portfolios:
+            return 0.0
+        portfolio = self.portfolios[agent_name]
+        total = portfolio["cash"]
+        for ticker, holding in portfolio["holdings"].items():
+            if current_prices and ticker in current_prices:
+                total += holding["volume"] * current_prices[ticker]
+            else:
+                total += holding["volume"] * holding["avg_price"]
         return total
 
     def get_return_rate(self, agent_name: str, current_prices: dict = None) -> float:
@@ -450,7 +526,7 @@ class PortfolioManager:
         if initial <= 0:
             return 0.0
 
-        current_total = self.get_total_value(agent_name, current_prices)
+        current_total = self.get_total_value_no_update(agent_name, current_prices)
         return ((current_total - initial) / initial) * 100
 
     def get_portfolio_summary(
@@ -466,6 +542,16 @@ class PortfolioManager:
         total_trades = portfolio.get("total_trades", 0)
         winning_trades = portfolio.get("winning_trades", 0)
         win_rate = (winning_trades / total_trades * 100) if total_trades > 0 else 0
+        
+        gross_profit = portfolio.get("total_gross_profit", 0)
+        gross_loss = portfolio.get("total_gross_loss", 0)
+        profit_factor = (gross_profit / gross_loss) if gross_loss > 0 else (float('inf') if gross_profit > 0 else 0)
+
+        # 손익비 (Risk-Reward Ratio) 계산: (평균 수익액 / 평균 손실액)
+        avg_profit = (gross_profit / winning_trades) if winning_trades > 0 else 0
+        losing_trades = total_trades - winning_trades
+        avg_loss = (gross_loss / losing_trades) if losing_trades > 0 else 0
+        rr_ratio = (avg_profit / avg_loss) if avg_loss > 0 else (float('inf') if avg_profit > 0 else 0)
 
         return {
             "agent_name": agent_name,
@@ -477,6 +563,12 @@ class PortfolioManager:
             "total_trades": total_trades,
             "winning_trades": winning_trades,
             "win_rate": win_rate,
+            "total_gross_profit": gross_profit,
+            "total_gross_loss": gross_loss,
+            "profit_factor": profit_factor,
+            "risk_reward_ratio": rr_ratio,
+            "max_drawdown": portfolio.get("max_drawdown", 0),
+            "peak_value": portfolio.get("peak_value", 0),
         }
 
     def export_portfolio_report(self, agent_name: str, current_prices: dict = None):
@@ -495,6 +587,7 @@ class PortfolioManager:
 | 현재 현금 | {summary['cash']:,.0f} KRW |
 | 총 평가액 | {summary['total_value']:,.0f} KRW |
 | **수익률** | **{summary['return_rate']:+.2f}%** |
+| 최대 낙폭 (MDD) | -{summary['max_drawdown']:.2f}% |
 
 ## 📊 매매 통계
 | 항목 | 값 |
@@ -502,6 +595,8 @@ class PortfolioManager:
 | 총 매매 횟수 | {summary['total_trades']} |
 | 수익 매매 | {summary['winning_trades']} |
 | 승률 | {summary['win_rate']:.1f}% |
+| **Profit Factor** | **{summary['profit_factor']:.2f}** |
+| **손익비 (RR)** | **{summary['risk_reward_ratio']:.2f}** |
 
 ## 📦 보유 종목
 """
@@ -587,6 +682,12 @@ class PortfolioManager:
                 ),
                 "winning_trades": self.portfolios.get(agent_name, {}).get(
                     "winning_trades", 0
+                ),
+                "total_gross_profit": self.portfolios.get(agent_name, {}).get(
+                    "total_gross_profit", 0
+                ),
+                "total_gross_loss": self.portfolios.get(agent_name, {}).get(
+                    "total_gross_loss", 0
                 ),
                 "is_halted": self.portfolios.get(agent_name, {}).get(
                     "is_halted", False
