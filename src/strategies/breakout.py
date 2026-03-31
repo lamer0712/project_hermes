@@ -32,11 +32,11 @@ class BreakoutStrategy(BaseStrategy):
             },
             "entry": {
                 "timeframe": "15m",
-                "volume_multiplier": 1.3,
-                "breakout_buffer": 0.002,
+                "volume_multiplier": 1.5,
+                "breakout_buffer": 0.003,
             },
             "exit": {
-                "rsi_threshold": 88,
+                "rsi_threshold": 85,
             },
             "position_size_ratio": 0.5,
         }

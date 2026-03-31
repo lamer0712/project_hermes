@@ -111,10 +111,10 @@ class RiskManager:
 
         # 빠른 본절 보호 (Break-even Stop)
         max_profit_pct = (max_price - avg_price) / avg_price * 100 if avg_price > 0 else 0
-        if max_profit_pct >= 1.5:
-            if profit_pct <= 0.2:
+        if max_profit_pct >= 2.5:
+            if profit_pct <= 0.5:
                 profit = (current_price - avg_price) * holdings[ticker]["volume"]
-                reason = f"본절 보호(Break-even): 최대 수익 {max_profit_pct:.2f}% 도달 후 하락 방어"
+                reason = f"본절 보호(Break-even): 최대 수익 {max_profit_pct:.2f}% 도달 후 하락 방어 (0.5% 보존)"
                 return Signal(
                     type=SignalType.SELL,
                     ticker=ticker,

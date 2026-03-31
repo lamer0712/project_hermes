@@ -91,14 +91,17 @@ class ExecutionManager:
                             self.portfolio_manager.update_holding_metadata(
                                 agent_name, ticker, atr_14=atr
                             )
-                        
+
                         custom_sl_price = order_data.get("custom_sl_price")
                         custom_tp_price = order_data.get("custom_tp_price")
                         if custom_sl_price is not None or custom_tp_price is not None:
                             self.portfolio_manager.update_holding_metadata(
-                                agent_name, ticker, custom_sl_price=custom_sl_price, custom_tp_price=custom_tp_price
+                                agent_name,
+                                ticker,
+                                custom_sl_price=custom_sl_price,
+                                custom_tp_price=custom_tp_price,
                             )
-                        
+
                         if msg and isinstance(msg, str):
                             trade_msgs.append(f"{msg}\n  └ 사유: {reason}")
                     elif order_type == "sell":
@@ -224,8 +227,16 @@ class ExecutionManager:
                     "current_price": current_price,
                     "atr": atr,
                     "strategy_name": strategy_name,
-                    "custom_sl_price": signal.custom_sl_price if hasattr(signal, "custom_sl_price") else None,
-                    "custom_tp_price": signal.custom_tp_price if hasattr(signal, "custom_tp_price") else None,
+                    "custom_sl_price": (
+                        signal.custom_sl_price
+                        if hasattr(signal, "custom_sl_price")
+                        else None
+                    ),
+                    "custom_tp_price": (
+                        signal.custom_tp_price
+                        if hasattr(signal, "custom_tp_price")
+                        else None
+                    ),
                     "volume": order_amount / current_price,  # fallback obj
                     "reason": signal.reason if hasattr(signal, "reason") else "",
                 }
@@ -265,9 +276,9 @@ class ExecutionManager:
         remaining_value = remaining_volume * current_price
 
         if remaining_value < self.MIN_ORDER_AMOUNT and remaining_volume > 0:
-            logger.warning(
-                f"[ExecutionManager] 분할 매도 잔여액({remaining_value:,.0f} KRW) 미달 → 전량 매도 전환"
-            )
+            # logger.warning(
+            #     f"[ExecutionManager] 분할 매도 잔여액({remaining_value:,.0f} KRW) 미달 → 전량 매도 전환"
+            # )
             sell_volume = held_volume
 
         estimated_value = sell_volume * current_price

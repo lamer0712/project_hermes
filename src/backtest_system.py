@@ -2,6 +2,7 @@ import os
 import sys
 import time
 import logging
+import sqlite3
 from datetime import datetime, timedelta
 import pandas as pd
 import requests
@@ -79,76 +80,115 @@ class MockNotifier:
         self._is_buffering = True
 
     def flush_buffer(self):
-        if self._buffer:
-            combined_msg = "[Mock Telegram]\n" + "\n".join(self._buffer)
-            print(combined_msg)
-            self._buffer.clear()
+        # 백테스트 속도를 위해 출력 생략
+        self._buffer.clear()
         self._is_buffering = False
 
     def send_message(self, message: str, parse_mode="markdown"):
-        if self._is_buffering:
-            self._buffer.append(message)
-        else:
-            print(f"[Mock Telegram]\n{message}")
+        # 백테스트 속도를 위해 출력 생략
+        pass
 
 
 def fetch_and_prepare_historical_data(ticker: str, days: int, interval: str) -> pd.DataFrame:
     """Upbit API에서 N일치 데이터를 묶음 스크롤링하여 가져오고, 지표까지 한 번에 붙인 데이터프레임을 반환합니다."""
-    logger.info(f"[{ticker}] 과거 {days}일치 {interval} 데이터 수집 중...")
+    # SQLite 캐시 처리
+    cache_db = "data/market_data_cache.db"
+    conn = sqlite3.connect(cache_db)
     
-    end_time = datetime.now().astimezone()
+    # 캐시 테이블 생성 (없을 경우)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS ohlcv (
+            ticker TEXT,
+            interval TEXT,
+            time TEXT,
+            open REAL,
+            high REAL,
+            low REAL,
+            close REAL,
+            volume REAL,
+            PRIMARY KEY (ticker, interval, time)
+        )
+    """)
     
-    frames = []
     # 60m이면 하루에 24개, 15m이면 하루에 96개
     candles_per_day = 24 if "60" in interval else 96
     total_candles = days * candles_per_day
     
-    candles_fetched = 0
-    while candles_fetched < total_candles:
-        url = f"https://api.upbit.com/v1/candles/{interval}"
-        count = min(200, total_candles - candles_fetched)
-        params = {
-            "market": ticker,
-            "count": count,
-            "to": end_time.strftime("%Y-%m-%dT%H:%M:%S") + "Z"
-        }
-        headers = {"accept": "application/json"}
+    # 1. DB에서 먼저 확인
+    query = f"SELECT * FROM ohlcv WHERE ticker='{ticker}' AND interval='{interval}' ORDER BY time DESC LIMIT {total_candles + 100}"
+    df_cached = pd.read_sql(query, conn)
+    
+    if len(df_cached) >= total_candles:
+        logger.info(f"[{ticker}] 캐시된 데이터 사용 ({len(df_cached)} rows)")
+        df = df_cached
+    else:
+        logger.info(f"[{ticker}] API에서 데이터 수집 중... (필요: {total_candles}, 캐시: {len(df_cached)})")
         
-        res = requests.get(url, headers=headers, params=params)
-        if res.status_code == 429:
-            time.sleep(1.0)
-            continue
-        if res.status_code != 200:
-            break
+        end_time = datetime.now().astimezone()
+        frames = []
+        candles_fetched = 0
+        
+        while candles_fetched < total_candles:
+            url = f"https://api.upbit.com/v1/candles/{interval}"
+            params = {
+                "market": ticker,
+                "count": 200,
+                "to": end_time.strftime("%Y-%m-%dT%H:%M:%S") + "Z"
+            }
+            headers = {"accept": "application/json"}
             
-        data = res.json()
-        if not data:
-            break
+            res = requests.get(url, headers=headers, params=params)
+            if res.status_code == 429:
+                time.sleep(1.0)
+                continue
+            if res.status_code != 200:
+                break
+                
+            data = res.json()
+            if not data:
+                break
+                
+            df_chunk = pd.DataFrame(data)
+            frames.append(df_chunk)
+            candles_fetched += len(data)
             
-        df_chunk = pd.DataFrame(data)
-        frames.append(df_chunk)
-        candles_fetched += len(data)
+            last_candle_time = pd.to_datetime(data[-1]["candle_date_time_utc"])
+            end_time = last_candle_time
+            time.sleep(0.1)  # Rate limiting
+            
+        if not frames:
+            conn.close()
+            return pd.DataFrame()
+            
+        # 데이터 정리
+        df_new = pd.concat(frames, ignore_index=True)
+        df_new = df_new.rename(columns={
+            "candle_date_time_utc": "time",
+            "opening_price": "open",
+            "high_price": "high",
+            "low_price": "low",
+            "trade_price": "close",
+            "candle_acc_trade_volume": "volume",
+        })
+        df_new = df_new[["time", "open", "high", "low", "close", "volume"]]
+        df_new["time"] = pd.to_datetime(df_new["time"]).dt.strftime("%Y-%m-%dT%H:%M:%S")
         
-        last_candle_time = pd.to_datetime(data[-1]["candle_date_time_utc"])
-        end_time = last_candle_time
-        time.sleep(0.1)  # Rate limiting
+        # DB에 저장 (중복 무시를 위해 temporary table 사용)
+        df_new.to_sql("temp_ohlcv", conn, if_exists="replace", index=False)
+        conn.execute(f"INSERT OR IGNORE INTO ohlcv (ticker, interval, time, open, high, low, close, volume) SELECT '{ticker}', '{interval}', time, open, high, low, close, volume FROM temp_ohlcv")
+        conn.commit()
+        conn.execute("DROP TABLE temp_ohlcv")
         
-    if not frames:
-        return pd.DataFrame()
-        
-    # 데이터 정리
-    df = pd.concat(frames, ignore_index=True)
-    df = df.rename(columns={
-        "candle_date_time_utc": "time",
-        "opening_price": "open",
-        "high_price": "high",
-        "low_price": "low",
-        "trade_price": "close",
-        "candle_acc_trade_volume": "volume",
-    })
-    df = df[["time", "open", "high", "low", "close", "volume"]]
+        df = pd.read_sql(query, conn)
+    
+    conn.close()
     df["time"] = pd.to_datetime(df["time"])
     df = df.sort_values("time").reset_index(drop=True)
+    
+    # 요청한 기간(days)만큼만 자르지 않고, 지표 계산을 위해 전체 다 사용하되 
+    # 최소 candles_fetched 만큼은 확보되었는지 확인
+    if len(df) < 50: # 최소 50캔들은 있어야 지표 계산 가능
+         return pd.DataFrame()
     
     # 지표 계산용 임시 메서드 호출
     # UpbitMarketData 구조상 내부 메서드를 차용하기 위해 df를 패치
@@ -237,48 +277,68 @@ def backtest_system(days: int = 5):
     logger.info(f"가상 타임라인 생성: {len(timeline)} 사이클 반복 예정 (15분 간격)")
     
     # 4. 본격적인 사이클 순회 (Live Simulation)
+    # 로깅 레벨 일시 조정 (속도 향상)
+    original_log_level = logging.getLogger().getEffectiveLevel()
+    logging.getLogger().setLevel(logging.ERROR)
+    
+    # 미리 데이터를 타임스탬프 기반으로 필터링하기 위한 최적화
+    # Dict of items: {ticker: (df, time_col_values)}
+    memo_setup = {t: (df, df['time'].values) for t, df in setup_full_data.items()}
+    memo_entry = {t: (df, df['time'].values) for t, df in entry_full_data.items()}
+
     for t_idx, current_time in enumerate(timeline):
-        
-        # 각 시점마다 진행 상황 로깅 (하루 단위 정도)
-        if t_idx % 96 == 0:
-            logger.info(f"⏰ [SimTime] 현재 시뮬레이션 시간: {current_time} (UTC) ---")
-            
         # T 시간 이하의 데이터로 자르기 (과거만 볼 수 있게)
         setup_slice = {}
         entry_slice = {}
-        for ticker in list(setup_full_data.keys()):
-            s_slice = setup_full_data[ticker][setup_full_data[ticker]['time'] <= current_time]
-            e_slice = entry_full_data[ticker][entry_full_data[ticker]['time'] <= current_time]
+
+        for ticker in memo_setup:
+            df_s, times_s = memo_setup[ticker]
+            df_e, times_e = memo_entry[ticker]
             
-            # 최소 100캔들 보장이 안되면 아직 무시 (초반 지표 워밍업)
-            if len(s_slice) > 10 and len(e_slice) > 50:
-                setup_slice[ticker] = s_slice
-                entry_slice[ticker] = e_slice
+            s_mask = times_s <= current_time
+            e_mask = times_e <= current_time
+            
+            # 최소 캔들 보장이 안되면 무시 (초반 지표 워밍업)
+            if s_mask.sum() > 10 and e_mask.sum() > 50:
+                setup_slice[ticker] = df_s[s_mask]
+                entry_slice[ticker] = df_e[e_mask]
                 
         if not setup_slice or not entry_slice:
             continue
             
         # 자체 Regime 판독 엔진 모방 (KRW-BTC의 setup_slice 기준)
         regime = "ranging"
-        try:
+        if "KRW-BTC" in setup_slice:
             btc_setup = setup_slice["KRW-BTC"]
-            price = btc_setup.close.iloc[-1]
-            prev_price = btc_setup.close.iloc[-2]
-            atr = btc_setup.atr_14.iloc[-1]
-            change = (price - prev_price) / prev_price
-            volatility = atr / price
-            adx = btc_setup.adx_14.iloc[-1]
-            ema20 = btc_setup.ma_20.iloc[-1]
-            ema50 = btc_setup.ma_50.iloc[-1]
+            if len(btc_setup) >= 2:
+                price = btc_setup.close.iloc[-1]
+                prev_price = btc_setup.close.iloc[-2]
+                atr = btc_setup.atr_14.iloc[-1]
+                change = (price - prev_price) / prev_price
+                volatility = atr / price
+                adx = btc_setup.adx_14.iloc[-1]
+                ema20 = btc_setup.ma_20.iloc[-1]
+                ema50 = btc_setup.ma_50.iloc[-1]
 
-            if change < -0.04: regime = "panic"
-            elif volatility > 0.035: regime = "volatile"
-            elif adx > 25: regime = "bullish" if ema20 > ema50 else "bearish"
-        except Exception:
-            pass # fallback to ranging
+                if change < -0.04: regime = "panic"
+                elif volatility > 0.035: regime = "volatile"
+                elif adx > 25: regime = "bullish" if ema20 > ema50 else "bearish"
             
         # 실제 사이클 수행
         manager.execute_cycle(setup_slice, entry_slice, regime)
+        
+    # 로깅 레벨 복구
+    logging.getLogger().setLevel(original_log_level)
+        
+    # 4.5 마지막 시점에 모든 보유 종목 매도 처리 (정확한 수익률/승률 계산을 위해)
+    holdings = pm.get_holdings("crypto_manager")
+    if holdings:
+        logger.info(f"🏁 백테스트 종료 시점: 모든 보유 종목({len(holdings)}개) 강제 청산 중...")
+        for ticker, h in list(holdings.items()):
+            if ticker in entry_full_data:
+                final_price = float(entry_full_data[ticker].close.iloc[-1])
+                from src.strategies.base import Signal, SignalType
+                pm.record_sell("crypto_manager", ticker, h["volume"], final_price)
         
     # 최종 리포트 출력
     logger.info("========== 시스템 백테스트 완료 ==========")
