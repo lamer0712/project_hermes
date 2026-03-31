@@ -53,14 +53,16 @@ def get_upbit_krw_balance() -> float:
 def update_target_coins():
     global TARGET_COINS
     logger.info("--- [System] 동적 대상 코인 선정 프로세스 시작 ---")
-    new_coins = UpbitMarketData.get_dynamic_target_coins(top_n=20)
+    new_coins = UpbitMarketData.get_dynamic_target_coins(top_n=25)
     if new_coins:
         TARGET_COINS = new_coins
     logger.info(f"--- [System] 현재 타겟 코인: {TARGET_COINS} ---")
 
 
 def execute_trading_cycle(manager: ManagerAgent):
-    logger.info("--- [System] Running Trading Cycle (Every 3 min) ---")
+    update_target_coins()
+
+    logger.info("--- [System] Running Trading Cycle (Every 15 min) ---")
 
     # 0. Get Advanced Market Data (OHLCV + Indicators) for each Target Coin
     setup_market_data = UpbitMarketData.get_multiple_ohlcv_with_indicators(
@@ -169,13 +171,17 @@ def execute_daily_sync(pm, manager, notifier):
 
 
 def acquire_single_instance_lock():
-    lock_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "logs", "hermes.lock")
+    lock_file = os.path.join(
+        os.path.dirname(os.path.abspath(__file__)), "..", "logs", "hermes.lock"
+    )
     os.makedirs(os.path.dirname(lock_file), exist_ok=True)
     fp = open(lock_file, "w")
     try:
         fcntl.flock(fp, fcntl.LOCK_EX | fcntl.LOCK_NB)
     except IOError:
-        logger.error("🚨 [System] Another instance of Project Hermes is already running.")
+        logger.error(
+            "🚨 [System] Another instance of Project Hermes is already running."
+        )
         sys.exit(1)
     return fp
 
@@ -184,7 +190,7 @@ def main():
     logger.info("=" * 60)
     logger.info("🏢 Project Hermes start")
     logger.info("=" * 60)
-    
+
     # 0. 단일 인스턴스 락 확인
     _lock_fp = acquire_single_instance_lock()
 

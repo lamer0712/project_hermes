@@ -59,7 +59,19 @@ class RiskManager:
         trailing_start_pct = self.risk_params.get("trailing_start_pct", 1.0)
 
         atr_14 = holdings[ticker].get("atr_14", 0)
-        if atr_14 > 0 and avg_price > 0:
+        fixed_sl_pct = holdings[ticker].get("fixed_sl_pct")
+        if fixed_sl_pct is not None:
+            stop_loss_pct = fixed_sl_pct
+            partial_stop_loss_list = []
+            for item in base_partial_sl:
+                multiplier = (
+                    item["pct"] / base_stop_loss_pct if base_stop_loss_pct != 0 else 1.0
+                )
+                dynamic_pct = round(stop_loss_pct * multiplier, 2)
+                partial_stop_loss_list.append(
+                    {"pct": dynamic_pct, "strength": item["strength"]}
+                )
+        elif atr_14 > 0 and avg_price > 0:
             atr_pct = (atr_14 / avg_price) * 100.0
             # 동적 스탑로스: ATR의 3.0배 (최소 3.5%, 최대 15%)
             stop_loss_pct = -max(3.5, min(15.0, atr_pct * 3.0))
@@ -110,9 +122,11 @@ class RiskManager:
             )
 
         # 빠른 본절 보호 (Break-even Stop)
-        max_profit_pct = (max_price - avg_price) / avg_price * 100 if avg_price > 0 else 0
-        if max_profit_pct >= 1.0:
-            if profit_pct <= 0.1:
+        max_profit_pct = (
+            (max_price - avg_price) / avg_price * 100 if avg_price > 0 else 0
+        )
+        if max_profit_pct >= 4.0:
+            if profit_pct <= 0.5:
                 profit = (current_price - avg_price) * holdings[ticker]["volume"]
                 reason = f"본절 보호(Break-even): 최대 수익 {max_profit_pct:.2f}% 도달 후 하락 방어 (본절 탈출)"
                 return Signal(
@@ -131,7 +145,7 @@ class RiskManager:
         if initial_sl is not None and initial_entry > initial_sl:
             risk_amount = initial_entry - initial_sl
             rr_target = initial_entry + (risk_amount * 1.7)
-            
+
             if current_price >= rr_target and "Partial_TP_1" not in tp_levels_hit:
                 profit = (current_price - avg_price) * holdings[ticker]["volume"]
                 reason = f"분할 익절(1.7:1 RR): 수익률 {profit_pct:.2f}%, {profit:,.0f}원, 목표가({rr_target:,.0f}) 도달"

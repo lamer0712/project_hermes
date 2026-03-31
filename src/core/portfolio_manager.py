@@ -38,7 +38,9 @@ class PortfolioManager:
                 for agent_name, pb in state.items():
                     new_name = self._AGENT_NAME_MIGRATION.get(agent_name, agent_name)
                     if new_name != agent_name:
-                        logger.info(f"[Manager] DB 마이그레이션: '{agent_name}' → '{new_name}'")
+                        logger.info(
+                            f"[Manager] DB 마이그레이션: '{agent_name}' → '{new_name}'"
+                        )
                         # DB에서도 이름 갱신
                         self.db.rename_agent(agent_name, new_name)
                     migrated_state[new_name] = pb
@@ -50,13 +52,13 @@ class PortfolioManager:
                             "cash": pb["available_cash"],
                             "holdings": {},
                             "initial_capital": pb["allocated_capital"],
-                            "total_trades": pb.get("total_trades", 0),
-                            "winning_trades": pb.get("winning_trades", 0),
-                            "total_gross_profit": pb.get("total_gross_profit", 0),
-                            "total_gross_loss": pb.get("total_gross_loss", 0),
-                            "peak_value": pb.get("peak_value", 0),
-                            "max_drawdown": pb.get("max_drawdown", 0),
                             "is_halted": pb["is_halted"],
+                            "buy_count": pb.get(
+                                "buy_count", pb.get("total_trades", 0) // 2
+                            ),
+                            "sell_count": pb.get(
+                                "sell_count", pb.get("total_trades", 0) // 2
+                            ),
                         }
                     else:
                         self.portfolios[agent_name]["cash"] = pb["available_cash"]
@@ -232,7 +234,7 @@ class PortfolioManager:
             # 수수료를 포함한 총 취득 원가 계산 (True Cost Basis)
             new_total_cost = existing["total_cost"] + total_cost_including_fee
             new_volume = existing["volume"] + volume
-            
+
             # 기존 max_price 및 분할손절 단계 유지
             holdings[ticker] = {
                 "volume": new_volume,
@@ -255,6 +257,7 @@ class PortfolioManager:
                 "max_price": price,
                 "initial_entry_price": price,
                 "initial_sl_price": None,
+                "fixed_sl_pct": None,
                 "sl_levels_hit": [],
                 "tp_levels_hit": [],
                 "atr_14": 0,
@@ -263,6 +266,7 @@ class PortfolioManager:
                 "custom_tp_price": None,
             }
 
+        portfolio["buy_count"] = portfolio.get("buy_count", 0) + 1
         portfolio["total_trades"] = portfolio.get("total_trades", 0) + 1
         self.save_state()
         self.db.record_trade(
@@ -330,12 +334,17 @@ class PortfolioManager:
         if holdings[ticker]["volume"] <= 1e-8:
             del holdings[ticker]
 
+        portfolio["sell_count"] = portfolio.get("sell_count", 0) + 1
         portfolio["total_trades"] = portfolio.get("total_trades", 0) + 1
         if profit > 0:
             portfolio["winning_trades"] = portfolio.get("winning_trades", 0) + 1
-            portfolio["total_gross_profit"] = portfolio.get("total_gross_profit", 0) + profit
+            portfolio["total_gross_profit"] = (
+                portfolio.get("total_gross_profit", 0) + profit
+            )
         elif profit < 0:
-            portfolio["total_gross_loss"] = portfolio.get("total_gross_loss", 0) + abs(profit)
+            portfolio["total_gross_loss"] = portfolio.get("total_gross_loss", 0) + abs(
+                profit
+            )
 
         self.save_state()
         self.db.record_trade(
@@ -407,6 +416,7 @@ class PortfolioManager:
         custom_sl_price: float = None,
         custom_tp_price: float = None,
         initial_sl_price: float = None,
+        fixed_sl_pct: float = None,
     ) -> bool:
         """
         보유 종목의 최대 가격(Trailing Stop용)과 도달한 손절 단계(Partial Stop Loss용)를 업데이트합니다.
@@ -457,6 +467,10 @@ class PortfolioManager:
             holding["initial_sl_price"] = initial_sl_price
             modified = True
 
+        if fixed_sl_pct is not None:
+            holding["fixed_sl_pct"] = fixed_sl_pct
+            modified = True
+
         if modified:
             self.save_state()
 
@@ -487,7 +501,7 @@ class PortfolioManager:
             return
 
         portfolio = self.portfolios[agent_name]
-        
+
         # 최초 실행 시 peak_value 초기화
         if portfolio.get("peak_value", 0) == 0:
             portfolio["peak_value"] = current_total_value
@@ -499,12 +513,18 @@ class PortfolioManager:
             self.save_state()
         else:
             # 낙폭 계산
-            drawdown = (portfolio["peak_value"] - current_total_value) / portfolio["peak_value"] * 100
+            drawdown = (
+                (portfolio["peak_value"] - current_total_value)
+                / portfolio["peak_value"]
+                * 100
+            )
             if drawdown > portfolio.get("max_drawdown", 0):
                 portfolio["max_drawdown"] = drawdown
                 self.save_state()
 
-    def get_total_value_no_update(self, agent_name: str, current_prices: dict = None) -> float:
+    def get_total_value_no_update(
+        self, agent_name: str, current_prices: dict = None
+    ) -> float:
         """MDD 업데이트 없이 총 자산 가치만 반환 (내부 루프용)"""
         if agent_name not in self.portfolios:
             return 0.0
@@ -540,18 +560,29 @@ class PortfolioManager:
         total_value = self.get_total_value(agent_name, current_prices)
         return_rate = self.get_return_rate(agent_name, current_prices)
         total_trades = portfolio.get("total_trades", 0)
+
+        # Win Rate: (Winning Sells / Total Sells)
         winning_trades = portfolio.get("winning_trades", 0)
-        win_rate = (winning_trades / total_trades * 100) if total_trades > 0 else 0
-        
+        sell_count = portfolio.get("sell_count", 0)
+        win_rate = (winning_trades / sell_count * 100) if sell_count > 0 else 0
+
         gross_profit = portfolio.get("total_gross_profit", 0)
         gross_loss = portfolio.get("total_gross_loss", 0)
-        profit_factor = (gross_profit / gross_loss) if gross_loss > 0 else (float('inf') if gross_profit > 0 else 0)
+        profit_factor = (
+            (gross_profit / gross_loss)
+            if gross_loss > 0
+            else (float("inf") if gross_profit > 0 else 0)
+        )
 
-        # 손익비 (Risk-Reward Ratio) 계산: (평균 수익액 / 평균 손실액)
+        # RR Ratio: (Avg Profit per Win / Avg Loss per Loss Sell)
         avg_profit = (gross_profit / winning_trades) if winning_trades > 0 else 0
-        losing_trades = total_trades - winning_trades
-        avg_loss = (gross_loss / losing_trades) if losing_trades > 0 else 0
-        rr_ratio = (avg_profit / avg_loss) if avg_loss > 0 else (float('inf') if avg_profit > 0 else 0)
+        losing_sells = sell_count - winning_trades
+        avg_loss = (gross_loss / losing_sells) if losing_sells > 0 else 0
+        rr_ratio = (
+            (avg_profit / avg_loss)
+            if avg_loss > 0
+            else (float("inf") if avg_profit > 0 else 0)
+        )
 
         return {
             "agent_name": agent_name,
@@ -718,8 +749,12 @@ class PortfolioManager:
                     )
                     data["atr_14"] = old_holdings[ticker].get("atr_14", 0)
                     data["strategy"] = old_holdings[ticker].get("strategy", "Unknown")
-                    data["custom_sl_price"] = old_holdings[ticker].get("custom_sl_price", None)
-                    data["custom_tp_price"] = old_holdings[ticker].get("custom_tp_price", None)
+                    data["custom_sl_price"] = old_holdings[ticker].get(
+                        "custom_sl_price", None
+                    )
+                    data["custom_tp_price"] = old_holdings[ticker].get(
+                        "custom_tp_price", None
+                    )
                 else:
                     data["max_price"] = data["avg_price"]
                     data["sl_levels_hit"] = []
@@ -757,11 +792,14 @@ class PortfolioManager:
         try:
             with self.db.get_connection() as conn:
                 cursor = conn.cursor()
-                cursor.execute('''
+                cursor.execute(
+                    """
                     SELECT COUNT(*) FROM trade_history 
                     WHERE agent_name = ? AND strategy = ? AND side = 'buy'
                     AND date(timestamp, '+9 hours') = date('now', '+9 hours')
-                ''', (agent_name, strategy))
+                """,
+                    (agent_name, strategy),
+                )
                 count = cursor.fetchone()[0]
                 return count[:] > 0 if isinstance(count, tuple) else count > 0
         except Exception as e:

@@ -41,7 +41,7 @@ class ManagerAgent:
         "recovery": ["PullbackTrend"],
         "weakbullish": ["PullbackTrend"],
         "bullish": ["Breakout", "PullbackTrend"],
-        "ranging": ["VWAPReversion", "MeanReversion", "BollingerSqueeze"],
+        "ranging": ["VWAPReversion", "BollingerSqueeze"],
         "volatile": ["Breakout", "BollingerSqueeze"],
     }
 

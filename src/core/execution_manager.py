@@ -95,14 +95,21 @@ class ExecutionManager:
                         custom_sl_price = order_data.get("custom_sl_price")
                         custom_tp_price = order_data.get("custom_tp_price")
                         initial_sl_price = order_data.get("initial_sl_price")
-                        
-                        if custom_sl_price is not None or custom_tp_price is not None or initial_sl_price is not None:
+                        fixed_sl_pct = order_data.get("fixed_sl_pct")
+
+                        if (
+                            custom_sl_price is not None
+                            or custom_tp_price is not None
+                            or initial_sl_price is not None
+                            or fixed_sl_pct is not None
+                        ):
                             self.portfolio_manager.update_holding_metadata(
                                 agent_name,
                                 ticker,
                                 custom_sl_price=custom_sl_price,
                                 custom_tp_price=custom_tp_price,
                                 initial_sl_price=initial_sl_price,
+                                fixed_sl_pct=fixed_sl_pct,
                             )
 
                         if msg and isinstance(msg, str):
@@ -207,7 +214,8 @@ class ExecutionManager:
         stop_loss_pct = risk_manager_params.get("stop_loss_pct", -5.0)
         if atr > 0:
             atr_pct = (atr / current_price) * 100.0
-            stop_loss_pct = -max(3.0, min(15.0, atr_pct * 2.5))
+            # 동적 스탑로스: ATR의 2.5배 (최소 5.5%, 최대 15%)
+            stop_loss_pct = -max(5.5, min(15.0, atr_pct * 2.5))
 
         logger.info(
             f"🟢 비동기 매수 제출: {ticker} | 금액: {order_amount:,.0f} KRW | SL: {stop_loss_pct:.1f}% | CP: {current_price:,.2f}"
@@ -241,11 +249,13 @@ class ExecutionManager:
                         else None
                     ),
                     "initial_sl_price": (
-                        signal.custom_sl_price if hasattr(signal, "custom_sl_price") and signal.custom_sl_price 
+                        signal.custom_sl_price
+                        if hasattr(signal, "custom_sl_price") and signal.custom_sl_price
                         else current_price * (1 + stop_loss_pct / 100.0)
                     ),
                     "volume": order_amount / current_price,  # fallback obj
                     "reason": signal.reason if hasattr(signal, "reason") else "",
+                    "fixed_sl_pct": stop_loss_pct,
                 }
                 return True
 

@@ -7,6 +7,7 @@ from datetime import datetime, timedelta
 import pandas as pd
 import requests
 import warnings
+import argparse
 
 warnings.filterwarnings("ignore")
 
@@ -250,7 +251,6 @@ def fetch_and_prepare_historical_data(
         df["ema_20"] = talib.EMA(close, timeperiod=20)
         df["ema_50"] = talib.EMA(close, timeperiod=50)
         df["ema_200"] = talib.EMA(close, timeperiod=200)
-        df["ema_50"] = talib.EMA(close, timeperiod=50)
         df["change_5"] = df["close"].pct_change(5) * 100
 
     except Exception as e:
@@ -283,12 +283,12 @@ def backtest_system(days: int = 5):
     manager.notifier = MockNotifier()
     manager.execution_manager.broker = manager.broker
     manager.execution_manager.notifier = manager.notifier
-    
+
     value_history = []
 
     # 2. 동적 타겟 코인 및 데이터 준비
-    tickers = UpbitMarketData.get_dynamic_target_coins(10)
-    logger.info(f"선정된 타겟 코인: {tickers}")
+    tickers = UpbitMarketData.get_dynamic_target_coins(100)
+    logger.info(f"선정된 타겟 코인 ({len(tickers)}개): {tickers}")
 
     setup_full_data = {}
     entry_full_data = {}
@@ -376,7 +376,7 @@ def backtest_system(days: int = 5):
 
         # 실제 사이클 수행
         manager.execute_cycle(setup_slice, entry_slice, regime)
-        
+
         # 자산 가치 기록 (MDD 계산용)
         current_total = pm.get_total_value("crypto_manager")
         value_history.append(current_total)
@@ -420,7 +420,7 @@ def backtest_system(days: int = 5):
     logger.info(f"승률: {summary['win_rate']:.1f}%")
     logger.info(f"Profit Factor: {summary['profit_factor']:.2f}")
     logger.info(f"손익비 (RR): {summary['risk_reward_ratio']:.2f}")
-    
+
     mdd = calculate_mdd(value_history)
     logger.info(f"최대 낙폭 (MDD): {mdd:+.2f}%")
 
@@ -433,4 +433,10 @@ def backtest_system(days: int = 5):
 
 
 if __name__ == "__main__":
-    backtest_system(days=5)
+    parser = argparse.ArgumentParser(description="Hermes System Backtest")
+    parser.add_argument(
+        "--days", type=int, default=5, help="Number of days to backtest (default: 5)"
+    )
+    args = parser.parse_args()
+
+    backtest_system(days=args.days)
