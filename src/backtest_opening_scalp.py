@@ -11,6 +11,10 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from src.strategies.opening_scalp import OpeningScalpStrategy
 from src.data.market_data import UpbitMarketData
 from src.utils.logger import logger
+from src.core.portfolio_manager import PortfolioManager
+from src.core.risk_manager import RiskManager
+import tempfile
+import os
 
 
 def fetch_historical_ohlcv(ticker: str, days: int) -> pd.DataFrame:
@@ -139,12 +143,14 @@ def backtest_opening_scalp(days: int = 5):
                 if signal.type.value == "BUY":
                     entry_signal = signal
                     entry_price = float(eval_slice.iloc[-1]["close"])
-                    tp_price = float(signal.custom_tp_price)
-                    sl_price = float(signal.custom_sl_price)
+                    tp_price = float(signal.custom_tp_price) if signal.custom_tp_price is not None else None
+                    sl_price = float(signal.custom_sl_price) if signal.custom_sl_price is not None else None
                     entry_idx = idx
 
+                    tp_str = f"{tp_price:,.2f}" if tp_price else "None"
+                    sl_str = f"{sl_price:,.2f}" if sl_price else "None"
                     logger.info(
-                        f"[BUY] {latest_time} | {ticker} | Entry: {entry_price:,.2f} | TP: {tp_price:,.2f} | SL: {sl_price:,.2f}"
+                        f"[BUY] {latest_time} | {ticker} | Entry: {entry_price:,.2f} | TP: {tp_str} | SL: {sl_str}"
                     )
                     break  # 해당 일자는 진입 완료
 
@@ -153,19 +159,60 @@ def backtest_opening_scalp(days: int = 5):
                 result = None
                 exit_price = 0
 
+                # Initialize portfolio for this trade
+                db_path = os.path.join(
+                    tempfile.gettempdir(), f"mock_{ticker}_{current_date}.db"
+                )
+                if os.path.exists(db_path):
+                    os.remove(db_path)
+                pm = PortfolioManager(total_capital=1000000, db_path=db_path)
+                pm.allocate("crypto_manager", 1000000)
+
+                # Mock a buy (10만원 어치)
+                volume = 100000 / entry_price
+                pm.record_buy(
+                    "crypto_manager",
+                    ticker,
+                    volume,
+                    entry_price,
+                    paid_fee=0.0005,
+                    strategy="OpeningScalp",
+                )
+                pm.update_holding_metadata(
+                    "crypto_manager",
+                    ticker,
+                    custom_sl_price=sl_price,
+                    custom_tp_price=tp_price,
+                )
+                rm = RiskManager(pm)
+
                 future_df = day_df.iloc[
                     day_df.index.get_loc(sim_df.index[entry_idx]) + 1 :
                 ]
 
                 for _, row in future_df.iterrows():
-                    # Low가 SL을 치는지, High가 TP를 치는지
-                    if row["low"] <= sl_price:
-                        result = "LOSS"
-                        exit_price = sl_price
-                        break
-                    elif row["high"] >= tp_price:
-                        result = "WIN"
-                        exit_price = tp_price
+                    op = float(row["open"])
+                    hi = float(row["high"])
+                    lo = float(row["low"])
+                    cl = float(row["close"])
+
+                    # 매우 보수적인 틱 평가 (고점을 찍은 후 저점으로 갔는지 역순 적용)
+                    ticks = [op, lo, hi, cl] if cl > op else [op, hi, lo, cl]
+
+                    clean_ticks = []
+                    for t in ticks:
+                        if not clean_ticks or t != clean_ticks[-1]:
+                            clean_ticks.append(t)
+
+                    for tick_price in clean_ticks:
+                        risk_signal = rm.evaluate_risk(
+                            "crypto_manager", ticker, tick_price
+                        )
+                        if risk_signal:
+                            result = f"SELL ({risk_signal.reason})"
+                            exit_price = tick_price
+                            break
+                    if result:
                         break
 
                 if not result:
@@ -186,6 +233,8 @@ def backtest_opening_scalp(days: int = 5):
                     {
                         "Date": current_date,
                         "Ticker": ticker,
+                        "TickerRank": tickers.index(ticker),
+                        "EntryTime": latest_time,
                         "Result": result,
                         "PnL(%)": pnl_pct,
                     }
@@ -193,11 +242,28 @@ def backtest_opening_scalp(days: int = 5):
 
             current_date += timedelta(days=1)
 
+    # -------- 일별 1종목 필터링 로직 (main.py와 동일한 조건) --------
+    daily_trades = {}
+    for r in results:
+        d = r["Date"]
+        if d not in daily_trades:
+            daily_trades[d] = []
+        daily_trades[d].append(r)
+        
+    filtered_results = []
+    # 매일 가장 먼저 발생한 진입(EntryTime), 동시간대면 우선순위(TickerRank)가 높은 종목 1개만 선택
+    for d, trades in sorted(daily_trades.items()):
+        trades.sort(key=lambda x: (x["EntryTime"], x["TickerRank"]))
+        filtered_results.append(trades[0])
+        
+    results = filtered_results
+    # -----------------------------------------------------------
+
     # 결과 집계
     total_trades = len(results)
     if total_trades > 0:
-        win_trades = sum(1 for r in results if r["Result"] == "WIN")
-        loss_trades = sum(1 for r in results if r["Result"] == "LOSS")
+        win_trades = sum(1 for r in results if r["PnL(%)"] > 0)
+        loss_trades = total_trades - win_trades
         win_rate = (win_trades / total_trades) * 100
         avg_pnl = sum(r["PnL(%)"] for r in results) / total_trades
 
@@ -210,7 +276,7 @@ def backtest_opening_scalp(days: int = 5):
 
         for r in results:
             print(
-                f"{r['Date']} | {r['Ticker']} \t {r['Result']:<5} \t {r['PnL(%)']:+.2f}%"
+                f"{r['Date']} | {r['EntryTime'].strftime('%H:%M')} 진입 | {r['Ticker']:<10} \t {r['Result']:<50} \t {r['PnL(%)']:+.2f}%"
             )
     else:
         logger.info("\n========== 백테스트 결과 ==========")
