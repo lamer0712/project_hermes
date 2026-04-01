@@ -60,6 +60,7 @@ class ManagerAgent:
         self.execution_manager = ExecutionManager(
             self.broker, self.portfolio_manager, self.notifier
         )
+        self.breakout_thresholds = {}  # 실시간 돌파 감시용 기준가 (high_20)
 
         # 마지막 싸이클의 종목별 평가 결과 저장
         self.last_ticker_stats = {}
@@ -91,6 +92,9 @@ class ManagerAgent:
             self.notifier.flush_buffer()
             return
 
+        # 0.5 실시간 돌파 기준가 업데이트 (실시간 감시용)
+        self._update_breakout_thresholds(entry_market_data)
+
         # 1. 컨텍스트 구성
         ctx = self._build_cycle_context(entry_market_data, market_regime)
 
@@ -103,6 +107,15 @@ class ManagerAgent:
         # 4. 마무리 (대기주문 확인 + 리포트 + 저장)
         self._finalize_cycle(ctx, market_regime)
         self.notifier.flush_buffer()
+
+    def _update_breakout_thresholds(self, entry_market_data: dict):
+        """15분 봉 데이터를 기반으로 실시간 돌파 감시 기준가를 설정합니다."""
+        self.breakout_thresholds = {}
+        for ticker, df in entry_market_data.items():
+            if df is None or df.empty or "high_20" not in df.columns:
+                continue
+            # 전고점(high_20)을 돌파 기준으로 설정
+            self.breakout_thresholds[ticker] = float(df.high_20.iloc[-1])
 
     # ──────────────────────────────────────────────
     # 파이프라인 단계
@@ -470,25 +483,82 @@ class ManagerAgent:
     # ──────────────────────────────────────────────
 
     def handle_realtime_tick(self, ticker: str, current_price: float) -> None:
-        """웹소켓에서 수신한 실시간 틱 데이터를 바탕으로 긴급 손절/익절을 검사합니다."""
+        """웹소켓에서 수신한 실시간 틱 데이터를 바탕으로 긴급 손절/익절 및 실시간 돌파 진입을 검사합니다."""
         self.execution_manager.check_pending_orders()
         if getattr(self, "portfolio_manager", None) is None:
             return
 
         holdings = self.portfolio_manager.get_holdings(self.name)
-        if ticker not in holdings or holdings[ticker].get("volume", 0) <= 0:
+        is_held = ticker in holdings and holdings[ticker].get("volume", 0) > 0
+
+        if is_held:
+            # ──────────────────────────────────────────────
+            # 1. 보유 종목 리스크 관리 (기존)
+            # ──────────────────────────────────────────────
+            risk_signal = self.risk_manager.evaluate_risk(self.name, ticker, current_price)
+            if risk_signal:
+                risk_signal_str = risk_signal.__str__()
+                self.notifier.start_buffering()
+                log = f"⚡[Realtime Risk Hook]\n{risk_signal_str}"
+                logger.warning(log)
+                self.execution_manager.execute_sell(
+                    self.name, ticker, current_price, risk_signal
+                )
+                self.execution_manager.check_pending_orders()
+                self.notifier.flush_buffer()
+        else:
+            # ──────────────────────────────────────────────
+            # 2. 미보유 종목 실시간 돌파 감시 (신규)
+            # ──────────────────────────────────────────────
+            threshold = self.breakout_thresholds.get(ticker)
+            if threshold and current_price >= threshold:
+                # 돌파 감지! (데이터 오염 방지를 위해 간단한 정보만 넘겨서 평가 실행)
+                self._execute_early_buy(ticker, current_price)
+
+    def _execute_early_buy(self, ticker: str, current_price: float):
+        """실시간 돌파가 감지된 종목에 대해 즉시 전략 평가 및 매수를 진행합니다."""
+        # 중복 진입 방지 (한 사이클 내 1회 트리거)
+        self.breakout_thresholds.pop(ticker, None)
+
+        self.notifier.start_buffering()
+        logger.info(f"🔥 [Realtime Breakout] {ticker} 돌파 감지! (Price: {current_price:,.0f})")
+
+        # 실시간 평가를 위해 필요한 데이터(15분 봉 + 지표) 가져오기
+        entry_df = UpbitMarketData.get_ohlcv_with_indicators_new(ticker, count=100, interval="minutes/15")
+        if entry_df is None or entry_df.empty:
+            self.notifier.flush_buffer()
             return
 
-        risk_signal = self.risk_manager.evaluate_risk(self.name, ticker, current_price)
-        if risk_signal:
-            risk_signal_str = risk_signal.__str__()
-            self.notifier.start_buffering()
-            log = f"⚡[Realtime Risk Hook]\n{risk_signal_str}"
-            # self.notifier.send_message(log)
-            logger.warning(log)
-            self.execution_manager.execute_sell(
-                self.name, ticker, current_price, risk_signal
-            )
-            # 주문 제출 후 즉시 체결 여부 확인 (IOC 등 대응)
-            self.execution_manager.check_pending_orders()
+        # 1. 컨텍스트 구성 (단일 종목용, 실시간 돌파는 변동성 장세로 가정)
+        ctx = self._build_cycle_context({ticker: entry_df}, "volatile")
+
+        # 2. 돌파 전략(Breakout) 직접 평가
+        strategy = self.strategy_manager.get_strategy("Breakout")
+        if not strategy:
             self.notifier.flush_buffer()
+            return
+
+        signal = strategy.evaluate(ticker, None, entry_df, ctx.portfolio_info)
+
+        # TickerEvaluation 기록 (finalize_cycle에서 사용)
+        ctx.ticker_stats[ticker] = TickerEvaluation(
+            ticker=ticker,
+            regime="volatile",
+            strategy=strategy.name,
+            signal_type=signal.type.value,
+            signal_reason=signal.reason,
+            signal_strength=signal.strength,
+            signal_confidence=signal.confidence,
+            current_price=current_price
+        )
+
+        if signal.type == SignalType.BUY:
+            if not ctx.buy_filter_passed or ctx.available_cash < self.MIN_ORDER_AMOUNT:
+                logger.info(f"⏸️ [Realtime] {ticker} 매수 조건은 맞으나 필터링 혹은 잔고 부족으로 보류")
+            else:
+                ctx.buy_candidates.append((signal, strategy, entry_df))
+                self._select_and_execute_buy(ctx)
+
+        # 3. 마무리 (리포트 전송 등)
+        self._finalize_cycle(ctx, "realtime_breakout")
+        self.notifier.flush_buffer()

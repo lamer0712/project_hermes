@@ -10,4 +10,5 @@ trades.md
 .DS_Store
 advice_report.md
 hermes.lock
-data/
+/data/
+/backtest_early.txt

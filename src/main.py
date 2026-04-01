@@ -59,8 +59,17 @@ def update_target_coins():
     logger.info(f"--- [System] 현재 타겟 코인: {TARGET_COINS} ---")
 
 
-def execute_trading_cycle(manager: ManagerAgent):
+def execute_trading_cycle(manager: ManagerAgent, ws_client: UpbitWebSocketClient):
     update_target_coins()
+
+    # 0. 실시간 티커 동기화
+    held_coins = []
+    if manager.portfolio_manager:
+        holdings = manager.portfolio_manager.get_holdings(manager.name)
+        held_coins = [t for t, h in holdings.items() if h.get("volume", 0) > 0]
+    
+    ws_tickers = list(set(TARGET_COINS + held_coins))
+    ws_client.update_tickers(ws_tickers)
 
     logger.info("--- [System] Running Trading Cycle (Every 15 min) ---")
 
@@ -253,7 +262,7 @@ def main():
     # 정규 15분 스케줄 (기존)
     for m in [0, 15, 30, 45]:
         schedule.every().hour.at(f"{m:02d}:30").do(
-            execute_trading_cycle, manager=manager
+            execute_trading_cycle, manager=manager, ws_client=ws_client
         )
 
     # 오프닝 스캘핑 5분 스케줄 (백테스트 결과 승률 저조로 인해 임시 중단)
@@ -279,7 +288,7 @@ def main():
     telegram_thread.start()
 
     # 첫 사이클 즉시 실행
-    execute_trading_cycle(manager=manager)
+    execute_trading_cycle(manager=manager, ws_client=ws_client)
 
     while True:
         schedule.run_pending()

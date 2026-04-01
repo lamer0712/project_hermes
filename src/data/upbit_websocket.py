@@ -19,6 +19,7 @@ class UpbitWebSocketClient:
         self.running = False
         self.loop = None
         self.thread = None
+        self._websocket = None  # 현재 활성 웹소켓 저장
 
     async def _connect_and_listen(self):
         while self.running:
@@ -30,7 +31,7 @@ class UpbitWebSocketClient:
                     close_timeout=5,
                     max_size=None,
                 ) as websocket:
-
+                    self._websocket = websocket
                     logger.info("[WebSocket] 연결 성공")
 
                     subscribe_fmt = [
@@ -46,6 +47,7 @@ class UpbitWebSocketClient:
 
                     while self.running:
                         try:
+                            # 웹소켓 메시지 수신 대기
                             data = await asyncio.wait_for(websocket.recv(), timeout=60)
                             parsed_data = json.loads(data.decode("utf-8"))
 
@@ -59,12 +61,29 @@ class UpbitWebSocketClient:
                                     )
 
                         except asyncio.TimeoutError:
-                            # logger.warning("[WebSocket] recv timeout")
+                            break
+                        except websockets.exceptions.ConnectionClosed:
                             break
 
             except Exception as e:
                 # logger.warning(f"[WebSocket] reconnecting: {e}")
                 await asyncio.sleep(3)
+            finally:
+                self._websocket = None
+
+    def update_tickers(self, new_tickers: list[str]):
+        """구동 중인 웹소켓의 감시 티커 목록을 실시간으로 업데이트합니다."""
+        if set(self.tickers) == set(new_tickers):
+            return
+
+        logger.info(f"[WebSocket] 티커 업데이트 요청: {len(new_tickers)}개")
+        self.tickers = new_tickers
+
+        # 현재 루프가 돌고 있다면 연결을 끊어 재연결 유도
+        if self._websocket and self.loop:
+            self.loop.call_soon_threadsafe(
+                lambda: asyncio.create_task(self._websocket.close())
+            )
 
     def start(self):
         """웹소켓 데몬을 별도의 스레드에서 백그라운드로 실행합니다."""
