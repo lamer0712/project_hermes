@@ -30,7 +30,7 @@ class BollingerSqueezeStrategy(BaseStrategy):
             },
             "entry": {
                 "timeframe": "15m",
-                "volume_multiplier": 1.4,
+                "volume_multiplier": 1.8,  # 노이즈 필터링 강화 (기존 1.4)
                 "rsi_threshold": 50,
             },
             "exit": {
@@ -129,6 +129,10 @@ class BollingerSqueezeStrategy(BaseStrategy):
                 return Signal(
                     SignalType.HOLD, ticker, f"Breakout but Low RSI ({rsi:.1f})", 0, 0.3
                 )
+
+        # 4. 🔥 Bullish Confirmation (15m 종가 양봉 혹은 긴 밑꼬리)
+        if not self.is_bullish_candle(entry_market_data):
+            return Signal(SignalType.HOLD, ticker, "진입대기 - 양봉/밑꼬리 컨펌 부족", 0, 0.4)
 
         if is_breakout and is_high_vol and rsi > self.params["entry"]["rsi_threshold"]:
             reasons = ["BB Squeeze Breakout", "High Volume", f"RSI={rsi:.1f}"]

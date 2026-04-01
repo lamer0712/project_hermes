@@ -118,6 +118,21 @@ class BaseStrategy(ABC):
         return current_rsi < threshold
 
     @staticmethod
+    def is_bullish_candle(df):
+        """15m 종가 양봉 혹은 긴 밑꼬리 컨펌 확인"""
+        if df is None or df.empty:
+            return False
+
+        current = df.iloc[-1]
+        candle_body = abs(current.close - current.open)
+        lower_tail = min(current.close, current.open) - current.low
+        is_bullish_close = current.close > current.open
+        # 몸통이 0보다 크고 밑꼬리가 몸통의 1.5배 이상이면 밑꼬리 긴 망치형 등으로 간주
+        has_long_tail = candle_body > 0 and lower_tail > candle_body * 1.5
+
+        return is_bullish_close or has_long_tail
+
+    @staticmethod
     def is_fake_dip(df):
         vol = df["volume"].iloc[-1]
         vol_ma = df["volume_ma20"].iloc[-1]

@@ -217,8 +217,9 @@ class ExecutionManager:
         stop_loss_pct = risk_manager_params.get("stop_loss_pct", -5.0)
         if atr > 0:
             atr_pct = (atr / current_price) * 100.0
-            # 동적 스탑로스: ATR의 2.5배 (최소 5.5%, 최대 15%)
-            stop_loss_pct = -max(5.5, min(15.0, atr_pct * 2.5))
+            # 동적 스탑로스: ATR의 2.5배 (최소 설정값, 최대 15%)
+            min_sl = abs(stop_loss_pct)
+            stop_loss_pct = -max(min_sl, min(15.0, atr_pct * 2.5))
 
         logger.info(
             f"🟢 비동기 매수 제출: {ticker} | 금액: {order_amount:,.0f} KRW | SL: {stop_loss_pct:.1f}% | CP: {current_price:,.2f}"

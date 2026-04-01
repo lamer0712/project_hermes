@@ -109,16 +109,26 @@ class PullbackTrendStrategy(BaseStrategy):
 
         # 상위 타임프레임(1h) 정배열 필터링 추가
         if not self.is_bullish_trend_htf(setup_market_data):
-            return Signal(SignalType.HOLD, ticker, "진입대기 - 상위 타임프레임(1h) 역배열 필터링", 0, 0.01)
+            return Signal(
+                SignalType.HOLD,
+                ticker,
+                "진입대기 - 상위 타임프레임(1h) 역배열 필터링",
+                0,
+                0.01,
+            )
 
         # 거래량 필터링 (1.4배 - 기존 파라미터 활용)
         vol_mult = self.params["entry"].get("volume_multiplier", 1.4)
         if not self.is_volume_confirmed(entry_market_data, multiplier=vol_mult):
-            return Signal(SignalType.HOLD, ticker, "진입대기 - 거래량 컨펌 부족", 0, 0.01)
+            return Signal(
+                SignalType.HOLD, ticker, "진입대기 - 거래량 컨펌 부족", 0, 0.01
+            )
 
         # RSI 과매수 필터링 (70 이상 제외)
         if not self.is_not_overbought(entry_market_data, threshold=70):
-            return Signal(SignalType.HOLD, ticker, "진입대기 - RSI 과매수 구역", 0, 0.01)
+            return Signal(
+                SignalType.HOLD, ticker, "진입대기 - RSI 과매수 구역", 0, 0.01
+            )
 
         setup_ok = (
             rsi_setup < setup_cfg["rsi_threshold"]
@@ -160,6 +170,12 @@ class PullbackTrendStrategy(BaseStrategy):
             vol_ratio = (volume / vol_ma) * 100 if vol_ma > 0 else 0
             reasons.append(f"거래량급증({vol_ratio:.0f}%)")
 
+        # 🔥 Bullish Confirmation (15m 종가 양봉 혹은 긴 밑꼬리)
+        if not self.is_bullish_candle(entry_market_data):
+            return Signal(
+                SignalType.HOLD, ticker, "진입대기 - 양봉/밑꼬리 컨펌 부족", 0, strength
+            )
+
         if strength >= 0.5:
 
             size_ratio = self.params["position_size_ratio"]
@@ -184,6 +200,12 @@ class PullbackTrendStrategy(BaseStrategy):
         )
 
         if strong_breakout:
+            # 🔥 Bullish Confirmation (15m 종가 양봉)
+            if current_price <= prev_price:
+                return Signal(
+                    SignalType.HOLD, ticker, "진입대기 - 강한돌파 양봉컨펌 부족", 0, 0.7
+                )
+
             size_ratio = self.params["position_size_ratio"]
             rsi_bonus = self.rsi_tiebreaker(rsi_entry, mode="momentum")
             return Signal(

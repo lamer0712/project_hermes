@@ -9,10 +9,10 @@ class RiskManager:
     """
 
     risk_params = {
-        "stop_loss_pct": -5.5,
+        "stop_loss_pct": -5.5,  # 노이즈 손절범위 원복 (너무 타이트하면 휘둘림)
         "take_profit_pct": 10.0,
-        "trailing_start_pct": 3.0,
-        "trailing_stop_pct": 1.5,
+        "trailing_start_pct": 2.8,  # 트레일링 시작점 소폭 조정
+        "trailing_stop_pct": 1.4,  # 트레일링 폭 소폭 조정
         "partial_stop_loss": [
             {"pct": -6, "strength": 0.5},
             {"pct": -12, "strength": 1.0},

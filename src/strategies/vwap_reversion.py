@@ -117,13 +117,7 @@ class VWAPReversionStrategy(BaseStrategy):
                 and current_price < bb_lower * 1.02
             ):
                 # 진입 컨펌: 캔들 종가 양봉 혹은 강한 밑꼬리 확인
-                candle_body = abs(df.close.iloc[-1] - df.open.iloc[-1])
-                lower_tail = min(df.close.iloc[-1], df.open.iloc[-1]) - df.low.iloc[-1]
-                
-                is_bullish_close = df.close.iloc[-1] > df.open.iloc[-1]
-                has_long_tail = candle_body > 0 and lower_tail > candle_body * 1.5
-                
-                if not (is_bullish_close or has_long_tail):
+                if not self.is_bullish_candle(df):
                     return Signal(
                         SignalType.HOLD, 
                         ticker, 

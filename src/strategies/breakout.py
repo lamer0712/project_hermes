@@ -112,7 +112,13 @@ class BreakoutStrategy(BaseStrategy):
         # =========================
         # 거시적 하락세(60분봉 정배열 확인: EMA 20 > 50 > 200) 필터링 추가
         if not self.is_bullish_trend_htf(setup_market_data):
-            return Signal(SignalType.HOLD, ticker, "진입대기 - 거시 하락/횡보장(60m 역배열) 필터링", 0, 0.1)
+            return Signal(
+                SignalType.HOLD,
+                ticker,
+                "진입대기 - 거시 하락/횡보장(60m 역배열) 필터링",
+                0,
+                0.1,
+            )
 
         # RSI 과매수 필터링 (70 이상 제외)
         if not self.is_not_overbought(entry_market_data, threshold=70):
@@ -159,6 +165,12 @@ class BreakoutStrategy(BaseStrategy):
         if self.is_downtrend(entry_market_data):
             strength *= 0.7
             reasons.append("역배열감점")
+
+        # 🔥 Bullish Confirmation (15m 종가 양봉 혹은 긴 밑꼬리)
+        if not self.is_bullish_candle(entry_market_data):
+            return Signal(
+                SignalType.HOLD, ticker, "진입대기 - 양봉/밑꼬리 컨펌 부족", 0, strength
+            )
 
         if strength >= 0.6:
             size_ratio = self.params["position_size_ratio"]

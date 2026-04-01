@@ -8,6 +8,7 @@ import pandas as pd
 import requests
 import warnings
 import argparse
+import json
 
 warnings.filterwarnings("ignore")
 
@@ -103,7 +104,7 @@ class MockNotifier:
 
 
 def fetch_and_prepare_historical_data(
-    ticker: str, days: int, interval: str
+    ticker: str, days: int, interval: str, end_time: datetime = None
 ) -> pd.DataFrame:
     """Upbit API에서 N일치 데이터를 묶음 스크롤링하여 가져오고, 지표까지 한 번에 붙인 데이터프레임을 반환합니다."""
     # SQLite 캐시 처리
@@ -143,7 +144,8 @@ def fetch_and_prepare_historical_data(
             f"[{ticker}] API에서 데이터 수집 중... (필요: {total_candles}, 캐시: {len(df_cached)})"
         )
 
-        end_time = datetime.now().astimezone()
+        if end_time is None:
+            end_time = datetime.now().astimezone()
         frames = []
         candles_fetched = 0
 
@@ -260,7 +262,7 @@ def fetch_and_prepare_historical_data(
     return df
 
 
-def backtest_system(days: int = 5):
+def backtest_system(days: int = 5, update: bool = False):
     logger.info(
         f"========== System execution_trading_cycle {days} Days Backtest Start =========="
     )
@@ -286,8 +288,37 @@ def backtest_system(days: int = 5):
 
     value_history = []
 
-    # 2. 동적 타겟 코인 및 데이터 준비
-    tickers = UpbitMarketData.get_dynamic_target_coins(100)
+    # 2. 타겟 코인 및 시간 정보 로드/업데이트
+    config_path = "data/backtest_target.json"
+    backtest_config = {}
+    if os.path.exists(config_path) and not update:
+        with open(config_path, "r") as f:
+            backtest_config = json.load(f)
+            logger.info(f"기존 백테스트 설정 로드: {config_path}")
+
+    # 티커 결정
+    if "tickers" in backtest_config and not update:
+        tickers = backtest_config["tickers"]
+    else:
+        tickers = UpbitMarketData.get_dynamic_target_coins(100)
+        backtest_config["tickers"] = tickers
+
+    # 기준 시간(end_time) 결정
+    if "end_time" in backtest_config and not update:
+        end_time_str = backtest_config["end_time"]
+        fixed_end_time = datetime.fromisoformat(end_time_str)
+        logger.info(f"고정된 기준 시간 사용: {end_time_str}")
+    else:
+        fixed_end_time = datetime.now().astimezone()
+        backtest_config["end_time"] = fixed_end_time.isoformat()
+        logger.info(f"새로운 기준 시간 설정: {backtest_config['end_time']}")
+
+    # 설정 저장
+    if update or not os.path.exists(config_path):
+        with open(config_path, "w") as f:
+            json.dump(backtest_config, f, indent=4)
+            logger.info(f"백테스트 설정 저장 완료: {config_path}")
+
     logger.info(f"선정된 타겟 코인 ({len(tickers)}개): {tickers}")
 
     setup_full_data = {}
@@ -295,10 +326,10 @@ def backtest_system(days: int = 5):
 
     for ticker in tickers:
         setup_df = fetch_and_prepare_historical_data(
-            ticker, days=days, interval="minutes/60"
+            ticker, days=days, interval="minutes/60", end_time=fixed_end_time
         )
         entry_df = fetch_and_prepare_historical_data(
-            ticker, days=days, interval="minutes/15"
+            ticker, days=days, interval="minutes/15", end_time=fixed_end_time
         )
         if not setup_df.empty and not entry_df.empty:
             setup_full_data[ticker] = setup_df
@@ -437,6 +468,9 @@ if __name__ == "__main__":
     parser.add_argument(
         "--days", type=int, default=5, help="Number of days to backtest (default: 5)"
     )
+    parser.add_argument(
+        "--update", action="store_true", help="Update target coins and end time"
+    )
     args = parser.parse_args()
 
-    backtest_system(days=args.days)
+    backtest_system(days=args.days, update=args.update)

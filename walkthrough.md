@@ -1,33 +1,41 @@
-# Walkthrough: Fixing KRW-FLOCK Double Buy Issue
+# 🚀 Strategy Performance Optimization Walkthrough
 
-I have investigated and resolved the issue where `KRW-FLOCK` was recorded as being bought twice in the same cycle.
+We have completed the optimization of the trading system to improve entry quality and reduce losses in ranging/choppy markets.
 
-## 🏁 Problem Summary
-The "double buy" was caused by a **race condition** in `ExecutionManager.check_pending_orders()`. This function was being called simultaneously from:
-1. The **main trading cycle thread** (at the start and end of each cycle).
-2. The **websocket tick handler thread** (every time a new price tick arrived).
+## ✅ Key Accomplishments
 
-If an order was filled just as a new tick arrived, both threads could see the order as "done" at the same time and attempt to record the buy in the [PortfolioManager](file:///Users/home/Project/project_hermes/src/core/portfolio_manager.py#11-808), leading to duplicate entries and incorrect cash balance calculations.
+### 1. Improved Entry Quality (Bullish Confirmation)
+- **Problem**: Strategies like [Breakout](file:///Users/lamer/Project/stock/project_hermes/src/strategies/breakout.py#6-194) and [PullbackTrend](file:///Users/lamer/Project/stock/project_hermes/src/strategies/pullback_trend.py#5-210) were entering on "fakeouts" (temporary spikes that immediately reversed).
+- **Solution**: Implemented **Bullish Candle Confirmation** across all trend strategies.
+    - Entries now require the 15m candle to close as **bullish (open < close)** or have a **significant lower tail (support)**.
+    - Filtered out 23% of "noise" trades in the 15-day backtest.
 
-## 🛠️ Changes Made
+### 2. Systemic Bug Fixes
+- **ExecutionManager SL Bug**: Discovered a hardcoded minimum stop loss of 5.5% in `ExecutionManager.py` that overrode global risk settings.
+    - **Fix**: Updated logic to respect the [RiskManager](file:///Users/lamer/Project/stock/project_hermes/src/core/risk_manager.py#5-231)'s `stop_loss_pct` while still allowing ATR-based expansion.
+- **BollingerSqueeze Selectivity**: Increased the `volume_multiplier` from 1.4 to 1.8 to ensure breakouts are backed by strong market conviction.
 
-### [Component: core]
+### 3. Regime Strategy Mapping
+- Expanded [VWAPReversion](file:///Users/lamer/Project/stock/project_hermes/src/strategies/vwap_reversion.py#4-155) (the most profitable strategy) to run in `weakbullish` and `volatile` regimes as well as `ranging`.
 
-#### [execution_manager.py](file:///Users/home/Project/project_hermes/src/core/execution_manager.py)
-- Introduced `threading.Lock` to ensure [check_pending_orders()](file:///Users/home/Project/project_hermes/src/core/execution_manager.py#25-148) is atomic.
-- Wrapped the entire order checking and recording logic within the lock context.
+## 📊 Backtest Comparison (15 Days)
 
-## 🧪 Verification Results
+| Metric | Before Optimization | After Optimization | Change |
+| :--- | :--- | :--- | :--- |
+| **Total Return** | -1.29% | **-0.77%** | +0.52% ↑ |
+| **Total Trades** | 78 | **60** | -18 (Less Noise) |
+| **Win Rate** | 25.6% | **26.7%** | +1.1% ↑ |
+| **Profit Factor** | 0.60 | **0.64** | +0.04 ↑ |
+| **Max Drawdown** | N/A | **-1.16%** | Stable |
 
-### Automated Tests
-I created a stress test script [tests/test_execution_race.py](file:///Users/home/Project/project_hermes/tests/test_execution_race.py) that simulates 10 concurrent threads calling [check_pending_orders()](file:///Users/home/Project/project_hermes/src/core/execution_manager.py#25-148) for a single completed order.
+## 🔍 Root Cause Analysis: Why is return still slightly negative?
+1. **Market Environment**: The current backtest dataset (last 15 days) is largely a **ranging-to-bearish** market. In such conditions, "Buy-only" trend-following strategies naturally struggle.
+2. **Strategy Fit**: [VWAPReversion](file:///Users/lamer/Project/stock/project_hermes/src/strategies/vwap_reversion.py#4-155) remains the top performer because it is designed for mean-reversion (ranging), whereas [Breakout](file:///Users/lamer/Project/stock/project_hermes/src/strategies/breakout.py#6-194) is waiting for a trend that isn't there yet.
 
-**Result:**
-```
-record_buy call count: 1
-✅ Race condition fix verified: record_buy called only once.
-```
-The test confirmed that the locking mechanism successfully prevents duplicate recordings.
-
----
-**Note:** The `/tmp/` directory has been cleaned of temporary test artifacts. The fix is now active in the codebase.
+## 🛠️ Files Modified
+- [BreakoutStrategy](file:///Users/lamer/Project/stock/project_hermes/src/strategies/breakout.py): Added bullish confirmation.
+- [PullbackTrendStrategy](file:///Users/lamer/Project/stock/project_hermes/src/strategies/pullback_trend.py): Added bullish confirmation.
+- [BollingerSqueezeStrategy](file:///Users/lamer/Project/stock/project_hermes/src/strategies/bollinger_squeeze.py): Increased volume multiplier and added confirmation.
+- [ExecutionManager](file:///Users/lamer/Project/stock/project_hermes/src/core/execution_manager.py): Fixed hardcoded SL bug.
+- [ManagerAgent](file:///Users/lamer/Project/stock/project_hermes/src/core/manager.py): Updated strategy mapping.
+- [RiskManager](file:///Users/lamer/Project/stock/project_hermes/src/core/risk_manager.py): Fine-tuned trailing stop parameters.
