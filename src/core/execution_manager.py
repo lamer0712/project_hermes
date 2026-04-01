@@ -1,4 +1,5 @@
 import time
+import threading
 from typing import Optional
 from src.utils.logger import logger
 
@@ -19,129 +20,131 @@ class ExecutionManager:
         self.notifier = notifier
         # pending_orders 구조: { "uuid": {"type": "buy"|"sell", "agent_name": .., "ticker": .., "current_price": .., "atr": .., "strategy_name": .., "volume": ..} }
         self.pending_orders = {}
+        self._lock = threading.Lock()
 
     def check_pending_orders(self):
         """대기 중인 제출 주문들의 체결 상태를 확인하여 PortfolioManager에 기록합니다."""
         if not self.broker.is_configured():
             return
 
-        if not self.pending_orders:
-            return
+        with self._lock:
+            if not self.pending_orders:
+                return
 
-        completed_uuids = []
-        for uuid_str, order_data in list(self.pending_orders.items()):
-            order_info = self.broker.get_order(uuid_str)
+            completed_uuids = []
+            for uuid_str, order_data in list(self.pending_orders.items()):
+                order_info = self.broker.get_order(uuid_str)
 
-            if "error" in order_info:
-                logger.error(
-                    f"[ExecutionManager] 주문 조회 실패 ({uuid_str}): {order_info['error']}"
-                )
-                continue
-
-            state = order_info.get("state")
-            if state in ("done", "cancel"):
-                completed_uuids.append((uuid_str, order_info, order_data))
-
-        # 실제 PM 업데이트 처리
-        trade_msgs = []
-        for uuid_str, order_info, order_data in completed_uuids:
-            state = order_info.get("state")
-            order_type = order_data["type"]
-            agent_name = order_data["agent_name"]
-            ticker = order_data["ticker"]
-            reason = order_data.get("reason", "")
-
-            if state == "done" or (
-                state == "cancel" and float(order_info.get("executed_volume", 0)) > 0
-            ):
-                try:
-                    executed_volume = float(order_info.get("executed_volume", 0))
-                    trades = order_info.get("trades", [])
-                    executed_funds = sum(float(t.get("funds", 0)) for t in trades)
-                    paid_fee = float(order_info.get("paid_fee", 0))
-
-                    if state == "cancel":
-                        logger.info(
-                            f"[ExecutionManager] 주문 취소되었으나 부분 체결됨: {ticker} ({executed_volume} {order_type})"
-                        )
-                except Exception as e:
-                    logger.error(f"[ExecutionManager] 체결 내역 파싱 오류: {e}")
-                    executed_volume = order_data.get("volume", 0)
-                    executed_funds = executed_volume * order_data.get(
-                        "current_price", 0
+                if "error" in order_info:
+                    logger.error(
+                        f"[ExecutionManager] 주문 조회 실패 ({uuid_str}): {order_info['error']}"
                     )
-                    paid_fee = 0.0
+                    continue
 
-                current_price = order_data.get("current_price", 0)
+                state = order_info.get("state")
+                if state in ("done", "cancel"):
+                    completed_uuids.append((uuid_str, order_info, order_data))
 
-                if self.portfolio_manager:
-                    if order_type == "buy":
-                        strategy_name = order_data.get("strategy_name", "Unknown")
-                        atr = order_data.get("atr", 0.0)
-                        msg = self.portfolio_manager.record_buy(
-                            agent_name=agent_name,
-                            ticker=ticker,
-                            volume=executed_volume,
-                            price=current_price,
-                            executed_funds=executed_funds,
-                            paid_fee=paid_fee,
-                            strategy=strategy_name,
-                        )
-                        if atr > 0:
-                            self.portfolio_manager.update_holding_metadata(
-                                agent_name, ticker, atr_14=atr
+            # 실제 PM 업데이트 처리
+            trade_msgs = []
+            for uuid_str, order_info, order_data in completed_uuids:
+                state = order_info.get("state")
+                order_type = order_data["type"]
+                agent_name = order_data["agent_name"]
+                ticker = order_data["ticker"]
+                reason = order_data.get("reason", "")
+
+                if state == "done" or (
+                    state == "cancel" and float(order_info.get("executed_volume", 0)) > 0
+                ):
+                    try:
+                        executed_volume = float(order_info.get("executed_volume", 0))
+                        trades = order_info.get("trades", [])
+                        executed_funds = sum(float(t.get("funds", 0)) for t in trades)
+                        paid_fee = float(order_info.get("paid_fee", 0))
+
+                        if state == "cancel":
+                            logger.info(
+                                f"[ExecutionManager] 주문 취소되었으나 부분 체결됨: {ticker} ({executed_volume} {order_type})"
                             )
+                    except Exception as e:
+                        logger.error(f"[ExecutionManager] 체결 내역 파싱 오류: {e}")
+                        executed_volume = order_data.get("volume", 0)
+                        executed_funds = executed_volume * order_data.get(
+                            "current_price", 0
+                        )
+                        paid_fee = 0.0
 
-                        custom_sl_price = order_data.get("custom_sl_price")
-                        custom_tp_price = order_data.get("custom_tp_price")
-                        initial_sl_price = order_data.get("initial_sl_price")
-                        fixed_sl_pct = order_data.get("fixed_sl_pct")
+                    current_price = order_data.get("current_price", 0)
 
-                        if (
-                            custom_sl_price is not None
-                            or custom_tp_price is not None
-                            or initial_sl_price is not None
-                            or fixed_sl_pct is not None
-                        ):
-                            self.portfolio_manager.update_holding_metadata(
-                                agent_name,
-                                ticker,
-                                custom_sl_price=custom_sl_price,
-                                custom_tp_price=custom_tp_price,
-                                initial_sl_price=initial_sl_price,
-                                fixed_sl_pct=fixed_sl_pct,
+                    if self.portfolio_manager:
+                        if order_type == "buy":
+                            strategy_name = order_data.get("strategy_name", "Unknown")
+                            atr = order_data.get("atr", 0.0)
+                            msg = self.portfolio_manager.record_buy(
+                                agent_name=agent_name,
+                                ticker=ticker,
+                                volume=executed_volume,
+                                price=current_price,
+                                executed_funds=executed_funds,
+                                paid_fee=paid_fee,
+                                strategy=strategy_name,
                             )
+                            if atr > 0:
+                                self.portfolio_manager.update_holding_metadata(
+                                    agent_name, ticker, atr_14=atr
+                                )
 
-                        if msg and isinstance(msg, str):
-                            trade_msgs.append(f"{msg}\n  └ 사유: {reason}")
-                    elif order_type == "sell":
-                        target_volume_to_deduct = order_data.get(
-                            "pm_tracked_volume", executed_volume
-                        )
-                        msg = self.portfolio_manager.record_sell(
-                            agent_name=agent_name,
-                            ticker=ticker,
-                            volume=executed_volume,
-                            price=current_price,
-                            executed_funds=executed_funds,
-                            paid_fee=paid_fee,
-                        )
-                        if msg and isinstance(msg, str):
-                            trade_msgs.append(f"{msg}\n  └ 사유: {reason}")
+                            custom_sl_price = order_data.get("custom_sl_price")
+                            custom_tp_price = order_data.get("custom_tp_price")
+                            initial_sl_price = order_data.get("initial_sl_price")
+                            fixed_sl_pct = order_data.get("fixed_sl_pct")
 
-            elif state == "cancel":
-                logger.warning(
-                    f"[ExecutionManager] 주문 취소됨: {ticker} ({order_type})"
-                )
+                            if (
+                                custom_sl_price is not None
+                                or custom_tp_price is not None
+                                or initial_sl_price is not None
+                                or fixed_sl_pct is not None
+                            ):
+                                self.portfolio_manager.update_holding_metadata(
+                                    agent_name,
+                                    ticker,
+                                    custom_sl_price=custom_sl_price,
+                                    custom_tp_price=custom_tp_price,
+                                    initial_sl_price=initial_sl_price,
+                                    fixed_sl_pct=fixed_sl_pct,
+                                )
 
-            # 처리 완료된 주문은 딕셔너리에서 제거
-            if uuid_str in self.pending_orders:
-                del self.pending_orders[uuid_str]
+                            if msg and isinstance(msg, str):
+                                trade_msgs.append(f"{msg}\n  └ 사유: {reason}")
+                        elif order_type == "sell":
+                            target_volume_to_deduct = order_data.get(
+                                "pm_tracked_volume", executed_volume
+                            )
+                            msg = self.portfolio_manager.record_sell(
+                                agent_name=agent_name,
+                                ticker=ticker,
+                                volume=executed_volume,
+                                price=current_price,
+                                executed_funds=executed_funds,
+                                paid_fee=paid_fee,
+                            )
+                            if msg and isinstance(msg, str):
+                                trade_msgs.append(f"{msg}\n  └ 사유: {reason}")
 
-        # 요약 메시지 전송
-        if trade_msgs:
-            combined_msg = "🔔 **매매 체결 알림**\n" + "\n".join(trade_msgs)
-            self.notifier.send_message(combined_msg)
+                elif state == "cancel":
+                    logger.warning(
+                        f"[ExecutionManager] 주문 취소됨: {ticker} ({order_type})"
+                    )
+
+                # 처리 완료된 주문은 딕셔너리에서 제거
+                if uuid_str in self.pending_orders:
+                    del self.pending_orders[uuid_str]
+
+            # 요약 메시지 전송
+            if trade_msgs:
+                combined_msg = "🔔 **매매 체결 알림**\n" + "\n".join(trade_msgs)
+                self.notifier.send_message(combined_msg)
 
     def execute_buy(
         self,

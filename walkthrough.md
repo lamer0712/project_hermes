@@ -1,46 +1,33 @@
-# Backtest & Telegram Metrics Implementation
+# Walkthrough: Fixing KRW-FLOCK Double Buy Issue
 
-I have implemented and verified the requested performance metrics (MDD, PF, RR Ratio) across both the backtesting system and the live Telegram reporting interface.
+I have investigated and resolved the issue where `KRW-FLOCK` was recorded as being bought twice in the same cycle.
 
-## Changes Made
+## 🏁 Problem Summary
+The "double buy" was caused by a **race condition** in `ExecutionManager.check_pending_orders()`. This function was being called simultaneously from:
+1. The **main trading cycle thread** (at the start and end of each cycle).
+2. The **websocket tick handler thread** (every time a new price tick arrived).
 
-### 1. Database & Persistence Layer
-- **[db.py](file:///Users/lamer/Project/stock/project_hermes/src/data/db.py)**
-    - Added `peak_value` and `max_drawdown` columns to the `portfolios` table for persistent MDD tracking in live trading.
-    - Updated save/load logic for the new metrics.
+If an order was filled just as a new tick arrived, both threads could see the order as "done" at the same time and attempt to record the buy in the [PortfolioManager](file:///Users/home/Project/project_hermes/src/core/portfolio_manager.py#11-808), leading to duplicate entries and incorrect cash balance calculations.
 
-### 2. Portfolio Management Layer
-- **[portfolio_manager.py](file:///Users/lamer/Project/stock/project_hermes/src/core/portfolio_manager.py)**
-    - Implemented [update_drawdown()](file:///Users/lamer/Project/stock/project_hermes/src/core/portfolio_manager.py#484-506): Automatically updates historical peak value and Maximum Drawdown (MDD) whenever total value is calculated.
-    - Added Profit Factor (PF) and **Risk-Reward (RR) Ratio** calculation.
-    - Updated markdown reports (`portfolio.md`) to include these new metrics.
+## 🛠️ Changes Made
 
-### 3. Telegram & Command Handlers
-- **[command_handler.py](file:///Users/lamer/Project/stock/project_hermes/src/communication/command_handler.py)**
-    - Updated the `/status` command to display MDD, PF, and RR Ratio in the overview.
-- **[strategy_report.py](file:///Users/lamer/Project/stock/project_hermes/src/data/strategy_report.py)**
-    - Updated the `/report` command to include PF and RR Ratio for each trading strategy and the global portfolio.
+### [Component: core]
 
-### 4. Strategy & Logic Improvements
-- **[base.py](file:///Users/lamer/Project/stock/project_hermes/src/strategies/base.py)**
-    - Added [is_bullish_trend_htf()](file:///Users/lamer/Project/stock/project_hermes/src/strategies/base.py#75-90), [is_volume_confirmed()](file:///Users/lamer/Project/stock/project_hermes/src/strategies/base.py#100-110), [is_not_overbought()](file:///Users/lamer/Project/stock/project_hermes/src/strategies/base.py#111-119) helpers.
-- **[portfolio_manager.py](file:///Users/lamer/Project/stock/project_hermes/src/core/portfolio_manager.py)**
-    - Updated [record_buy](file:///Users/lamer/Project/stock/project_hermes/src/core/portfolio_manager.py#186-282) and [update_holding_metadata](file:///Users/lamer/Project/stock/project_hermes/src/core/portfolio_manager.py#399-464) to track `initial_entry_price` and `initial_sl_price`.
-- **[risk_manager.py](file:///Users/lamer/Project/stock/project_hermes/src/core/risk_manager.py)**
-    - **Partial TP (1.7:1 RR)**: Sells 50% of the position when the profit reaches 1.7x the initial risk. This provides a better balance than 1:1.
-    - **Early Break-even**: Automatically moves the stop-loss to the entry price once the profit reaches 1.0%.
+#### [execution_manager.py](file:///Users/home/Project/project_hermes/src/core/execution_manager.py)
+- Introduced `threading.Lock` to ensure [check_pending_orders()](file:///Users/home/Project/project_hermes/src/core/execution_manager.py#25-148) is atomic.
+- Wrapped the entire order checking and recording logic within the lock context.
 
-## Performance Optimization Results
+## 🧪 Verification Results
 
-By applying the **HTF Trend, Volume, RSI filters, and Refined Risk Management**, we achieved a highly stable and profitable system.
+### Automated Tests
+I created a stress test script [tests/test_execution_race.py](file:///Users/home/Project/project_hermes/tests/test_execution_race.py) that simulates 10 concurrent threads calling [check_pending_orders()](file:///Users/home/Project/project_hermes/src/core/execution_manager.py#25-148) for a single completed order.
 
-| Metric | Baseline | HTF + Vol + RSI | **Final (Refined Risk Management)** | Change (Final vs Base) |
-|--------|----------|-----------------|-----------------------------------|------------------------|
-| **Profit Factor (PF)** | 0.96 | 1.99 | **1.58** | **+65%** |
-| **Win Rate** | 37.5% | 45.7% | **42.3%** | **+4.8%** |
-| **Risk-Reward (RR)** | 1.59 | 2.37 | **2.15** | **+35%** |
-| **Max Drawdown (MDD)** | -0.31% | -0.12% | **-0.09%** | **+71% Improvement** |
-| **Net Profit** | -0.01% | +0.12% | **+0.07%** | **Positive Shift** |
+**Result:**
+```
+record_buy call count: 1
+✅ Race condition fix verified: record_buy called only once.
+```
+The test confirmed that the locking mechanism successfully prevents duplicate recordings.
 
-## Summary
-The final refined system (using a 1.7:1 RR for partial TP) provides the best balance of all worlds. It maintains a healthy Profit Factor of 1.58 while achieving our lowest ever Max Drawdown of -0.09%. This ensures that the trading engine is both profitable and extremely resilient to market reversals.
+---
+**Note:** The `/tmp/` directory has been cleaned of temporary test artifacts. The fix is now active in the codebase.
