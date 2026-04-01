@@ -244,15 +244,25 @@ class UpbitMarketData(BaseMarketData):
 
     @classmethod
     def get_ohlcv_with_indicators_new(
-        cls, ticker: str, count: int = 100, interval: str = "minutes/15"
+        cls,
+        ticker: str,
+        count: int = 100,
+        interval: str = "minutes/15",
+        current_price: float = None,
     ):
         df = cls.get_ohlcv(ticker, count, interval)
         if df.empty:
             return df
 
         close = df["close"]
+        if current_price is not None:
+            close.iloc[-1] = current_price
         high = df["high"]
+        if current_price is not None:
+            high.iloc[-1] = max(high.iloc[-1], current_price)
         low = df["low"]
+        if current_price is not None:
+            low.iloc[-1] = min(low.iloc[-1], current_price)
         volume = df["volume"]
 
         # high / low
@@ -297,7 +307,7 @@ class UpbitMarketData(BaseMarketData):
         df["ema_200"] = talib.EMA(close, timeperiod=200)
 
         ## Change 5
-        df["change_5"] = df["close"].pct_change(5) * 100
+        df["change_5"] = close.pct_change(5) * 100
         return df
 
     @classmethod

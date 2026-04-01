@@ -535,7 +535,7 @@ class ManagerAgent:
 
         # 실시간 평가를 위해 필요한 데이터(15분 봉 + 지표) 가져오기
         entry_df = UpbitMarketData.get_ohlcv_with_indicators_new(
-            ticker, count=100, interval="minutes/15"
+            ticker, count=100, interval="minutes/15", current_price=current_price
         )
         if entry_df is None or entry_df.empty:
             self.notifier.flush_buffer()
