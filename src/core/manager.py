@@ -102,6 +102,7 @@ class ManagerAgent:
 
         # 4. 마무리 (대기주문 확인 + 리포트 + 저장)
         self._finalize_cycle(ctx, market_regime)
+        self.notifier.flush_buffer()
 
     # ──────────────────────────────────────────────
     # 파이프라인 단계
@@ -390,7 +391,6 @@ class ManagerAgent:
         except Exception as e:
             logger.error(f"Failed to send cycle report or export portfolio: {e}")
 
-        self.notifier.flush_buffer()
 
     # ──────────────────────────────────────────────
     # 리포트
