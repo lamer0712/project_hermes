@@ -335,8 +335,13 @@ class ManagerAgent:
 
         for cand_signal, cand_strategy, cand_market_data in ctx.buy_candidates:
             # 보유 종목 수 제한 확인
-            if len(self.portfolio_manager.get_holdings(self.name)) >= self.MAX_POSITIONS:
-                logger.info(f"[ManagerAgent] 최대 보유 종목 수({self.MAX_POSITIONS}) 도달로 매수 중단.")
+            if (
+                len(self.portfolio_manager.get_holdings(self.name))
+                >= self.MAX_POSITIONS
+            ):
+                logger.info(
+                    f"[ManagerAgent] 최대 보유 종목 수({self.MAX_POSITIONS}) 도달로 매수 중단."
+                )
                 break
 
             if cand_signal.confidence <= 0.3:
@@ -349,9 +354,11 @@ class ManagerAgent:
 
             current_price = float(cand_market_data.close.iloc[-1])
             available_cash = self.portfolio_manager.get_available_cash(self.name)
-            
+
             if available_cash < self.MIN_ORDER_AMOUNT:
-                logger.info(f"[ManagerAgent] 잔고 부족({available_cash:,.0f} < {self.MIN_ORDER_AMOUNT})으로 매수 종료.")
+                logger.info(
+                    f"[ManagerAgent] 잔고 부족({available_cash:,.0f} < {self.MIN_ORDER_AMOUNT})으로 매수 종료."
+                )
                 break
 
             atr = (
@@ -403,7 +410,6 @@ class ManagerAgent:
                 )
         except Exception as e:
             logger.error(f"Failed to send cycle report or export portfolio: {e}")
-
 
     # ──────────────────────────────────────────────
     # 리포트
@@ -495,7 +501,9 @@ class ManagerAgent:
             # ──────────────────────────────────────────────
             # 1. 보유 종목 리스크 관리 (기존)
             # ──────────────────────────────────────────────
-            risk_signal = self.risk_manager.evaluate_risk(self.name, ticker, current_price)
+            risk_signal = self.risk_manager.evaluate_risk(
+                self.name, ticker, current_price
+            )
             if risk_signal:
                 risk_signal_str = risk_signal.__str__()
                 self.notifier.start_buffering()
@@ -521,10 +529,14 @@ class ManagerAgent:
         self.breakout_thresholds.pop(ticker, None)
 
         self.notifier.start_buffering()
-        logger.info(f"🔥 [Realtime Breakout] {ticker} 돌파 감지! (Price: {current_price:,.0f})")
+        logger.info(
+            f"🔥 [Realtime Breakout] {ticker} 돌파 감지! (Price: {current_price:,.0f})"
+        )
 
         # 실시간 평가를 위해 필요한 데이터(15분 봉 + 지표) 가져오기
-        entry_df = UpbitMarketData.get_ohlcv_with_indicators_new(ticker, count=100, interval="minutes/15")
+        entry_df = UpbitMarketData.get_ohlcv_with_indicators_new(
+            ticker, count=100, interval="minutes/15"
+        )
         if entry_df is None or entry_df.empty:
             self.notifier.flush_buffer()
             return
@@ -549,16 +561,18 @@ class ManagerAgent:
             signal_reason=signal.reason,
             signal_strength=signal.strength,
             signal_confidence=signal.confidence,
-            current_price=current_price
+            current_price=current_price,
         )
 
         if signal.type == SignalType.BUY:
             if not ctx.buy_filter_passed or ctx.available_cash < self.MIN_ORDER_AMOUNT:
-                logger.info(f"⏸️ [Realtime] {ticker} 매수 조건은 맞으나 필터링 혹은 잔고 부족으로 보류")
+                logger.info(
+                    f"⏸️ [Realtime] {ticker} 매수 조건은 맞으나 필터링 혹은 잔고 부족으로 보류"
+                )
             else:
                 ctx.buy_candidates.append((signal, strategy, entry_df))
                 self._select_and_execute_buy(ctx)
 
         # 3. 마무리 (리포트 전송 등)
-        self._finalize_cycle(ctx, "realtime_breakout")
+        self._finalize_cycle(ctx, "realtime breakout")
         self.notifier.flush_buffer()
