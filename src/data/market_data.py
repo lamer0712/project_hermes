@@ -254,15 +254,15 @@ class UpbitMarketData(BaseMarketData):
         if df.empty:
             return df
 
+        if current_price is not None:
+            df.loc[df.index[-1], "close"] = current_price
+            df.loc[df.index[-1], "high"] = max(df["high"].iloc[-1], current_price)
+            df.loc[df.index[-1], "low"] = min(df["low"].iloc[-1], current_price)
+
+        # 위에서 df가 이미 수정되었으므로, 아래 변수들은 최신값을 가집니다.
         close = df["close"]
-        if current_price is not None:
-            close.iloc[-1] = current_price
         high = df["high"]
-        if current_price is not None:
-            high.iloc[-1] = max(high.iloc[-1], current_price)
         low = df["low"]
-        if current_price is not None:
-            low.iloc[-1] = min(low.iloc[-1], current_price)
         volume = df["volume"]
 
         # high / low

@@ -112,9 +112,12 @@ class ManagerAgent:
         """15분 봉 데이터를 기반으로 실시간 돌파 감시 기준가를 설정합니다."""
         self.breakout_thresholds = {}
         for ticker, df in entry_market_data.items():
+            # 전고점(high_20)을 돌파 기준으로 설정
             if df is None or df.empty or "high_20" not in df.columns:
                 continue
-            # 전고점(high_20)을 돌파 기준으로 설정
+            # 보유 종목 제외
+            if ticker in self.portfolio_manager.get_holdings(self.name):
+                continue
             self.breakout_thresholds[ticker] = float(df.high_20.iloc[-1])
 
     # ──────────────────────────────────────────────
@@ -519,7 +522,7 @@ class ManagerAgent:
             # 2. 미보유 종목 실시간 돌파 감시 (신규)
             # ──────────────────────────────────────────────
             threshold = self.breakout_thresholds.get(ticker)
-            if threshold and current_price >= threshold:
+            if threshold and current_price > threshold:
                 # 돌파 감지! (데이터 오염 방지를 위해 간단한 정보만 넘겨서 평가 실행)
                 self._execute_early_buy(ticker, current_price)
 
@@ -528,7 +531,6 @@ class ManagerAgent:
         # 중복 진입 방지 (한 사이클 내 1회 트리거)
         self.breakout_thresholds.pop(ticker, None)
 
-        self.notifier.start_buffering()
         logger.info(
             f"🔥 [Realtime Breakout] {ticker} 돌파 감지! (Price: {current_price:,.0f})"
         )
@@ -538,17 +540,18 @@ class ManagerAgent:
             ticker, count=100, interval="minutes/15", current_price=current_price
         )
         if entry_df is None or entry_df.empty:
-            self.notifier.flush_buffer()
             return
 
         # 1. 컨텍스트 구성 (단일 종목용, 실시간 돌파는 변동성 장세로 가정)
+
         ctx = self._build_cycle_context({ticker: entry_df}, "volatile")
 
         # 2. 돌파 전략(Breakout) 직접 평가
         strategy = self.strategy_manager.get_strategy("Breakout")
         if not strategy:
-            self.notifier.flush_buffer()
             return
+
+        self.notifier.start_buffering()
 
         signal = strategy.evaluate(ticker, None, entry_df, ctx.portfolio_info)
 
