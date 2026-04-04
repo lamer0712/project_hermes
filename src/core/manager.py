@@ -61,6 +61,7 @@ class ManagerAgent:
             self.broker, self.portfolio_manager, self.notifier
         )
         self.breakout_thresholds = {}  # 실시간 돌파 감시용 기준가 (high_20)
+        self.breakout_cooldowns = {}   # 실시간 돌파 평가 쿨타임 기록용
 
         # 마지막 싸이클의 종목별 평가 결과 저장
         self.last_ticker_stats = {}
@@ -536,13 +537,15 @@ class ManagerAgent:
             # ──────────────────────────────────────────────
             threshold = self.breakout_thresholds.get(ticker)
             if threshold and current_price > threshold:
-                # 돌파 감지! (데이터 오염 방지를 위해 간단한 정보만 넘겨서 평가 실행)
-                self._execute_early_buy(ticker, current_price)
+                # 2분(120초) 쿨타임 체크 (잦은 API 호출 방지 및 재돌파 기회 유지)
+                last_eval = self.breakout_cooldowns.get(ticker, 0)
+                if time.time() - last_eval > 120:
+                    self._execute_early_buy(ticker, current_price)
 
     def _execute_early_buy(self, ticker: str, current_price: float):
         """실시간 돌파가 감지된 종목에 대해 즉시 전략 평가 및 매수를 진행합니다."""
-        # 중복 진입 방지 (한 사이클 내 1회 트리거)
-        self.breakout_thresholds.pop(ticker, None)
+        # 쿨타임 즉시 갱신
+        self.breakout_cooldowns[ticker] = time.time()
 
         logger.info(
             f"🔥 [Realtime Breakout] {ticker} 돌파 감지! (Price: {current_price:,.0f})"
@@ -589,6 +592,11 @@ class ManagerAgent:
             else:
                 ctx.buy_candidates.append((signal, strategy, entry_df))
                 self._select_and_execute_buy(ctx)
+
+                # 매수 성공 시 감시 목록에서 제거
+                holdings = self.portfolio_manager.get_holdings(self.name)
+                if ticker in holdings and holdings[ticker].get("volume", 0) > 0:
+                    self.breakout_thresholds.pop(ticker, None)
 
                 # 3. 마무리 (리포트 전송 등) - 매수 시도 시에만 전송
                 self._finalize_cycle(ctx, "realtime breakout")
