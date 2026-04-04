@@ -49,6 +49,10 @@ class TelegramNotifier:
         self.is_buffering = True
         self.message_buffer = []
 
+    def discard_buffer(self):
+        self.is_buffering = False
+        self.message_buffer = []
+
     def flush_buffer(self) -> bool:
         self.is_buffering = False
         if not self.message_buffer:

@@ -126,9 +126,22 @@ class RiskManager:
             (max_price - avg_price) / avg_price * 100 if avg_price > 0 else 0
         )
         if max_profit_pct >= 4.0:
-            if profit_pct <= 0.5:
+            # 한 번 4% 넘었으면, 1.5%까지는 지켜주기 (분절 방지)
+            if profit_pct <= 1.5:
                 profit = (current_price - avg_price) * holdings[ticker]["volume"]
-                reason = f"본절 보호(Break-even): 최대 수익 {max_profit_pct:.2f}% 도달 후 하락 방어 (본절 탈출)"
+                reason = f"이익 보존(Profit Preservation): 최대 수익 {max_profit_pct:.2f}% 도달 후 하락 방어 (1.5% 지점에서 탈출)"
+                return Signal(
+                    type=SignalType.SELL,
+                    ticker=ticker,
+                    reason=reason,
+                    strength=1.0,
+                    confidence=1.0,
+                )
+        elif max_profit_pct >= 2.0:
+            # 2% 이상 갔을 때 0.3% 수준으로 본절 보호
+            if profit_pct <= 0.3:
+                profit = (current_price - avg_price) * holdings[ticker]["volume"]
+                reason = f"본절 보호(Break-even): 최대 수익 {max_profit_pct:.2f}% 도달 후 하락 방어 (본절 지점 탈출)"
                 return Signal(
                     type=SignalType.SELL,
                     ticker=ticker,
@@ -144,11 +157,12 @@ class RiskManager:
 
         if initial_sl is not None and initial_entry > initial_sl:
             risk_amount = initial_entry - initial_sl
-            rr_target = initial_entry + (risk_amount * 1.7)
+            rr_target_1 = initial_entry + (risk_amount * 1.5)  # 1차 TP (1.5:1)
+            rr_target_2 = initial_entry + (risk_amount * 2.5)  # 2차 TP (2.5:1)
 
-            if current_price >= rr_target and "Partial_TP_1" not in tp_levels_hit:
+            if current_price >= rr_target_1 and "Partial_TP_1" not in tp_levels_hit:
                 profit = (current_price - avg_price) * holdings[ticker]["volume"]
-                reason = f"분할 익절(1.7:1 RR): 수익률 {profit_pct:.2f}%, {profit:,.0f}원, 목표가({rr_target:,.0f}) 도달"
+                reason = f"분할 익절(1차 1.5:1 RR): 수익률 {profit_pct:.2f}%, {profit:,.0f}원, 목표가({rr_target_1:,.0f}) 도달"
                 self.portfolio_manager.update_holding_metadata(
                     agent_name, ticker, hit_tp_level="Partial_TP_1"
                 )
@@ -159,9 +173,23 @@ class RiskManager:
                     strength=0.5,
                     confidence=1.0,
                 )
+            
+            if current_price >= rr_target_2 and "Partial_TP_2" not in tp_levels_hit:
+                profit = (current_price - avg_price) * holdings[ticker]["volume"]
+                reason = f"분할 익절(2차 2.5:1 RR): 수익률 {profit_pct:.2f}%, {profit:,.0f}원, 목표가({rr_target_2:,.0f}) 도달"
+                self.portfolio_manager.update_holding_metadata(
+                    agent_name, ticker, hit_tp_level="Partial_TP_2"
+                )
+                return Signal(
+                    type=SignalType.SELL,
+                    ticker=ticker,
+                    reason=reason,
+                    strength=0.5,
+                    confidence=1.0,
+                )
 
-        # 1. 트레일링 스탑
-        if trailing_stop_pct is not None and profit_pct >= trailing_start_pct:
+        # 1. 트레일링 스탑 (활성화: max_profit_pct 기준)
+        if trailing_stop_pct is not None and max_profit_pct >= trailing_start_pct:
             drawdown_from_max = (
                 (current_price - max_price) / max_price * 100.0 if max_price > 0 else 0
             )

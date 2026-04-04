@@ -133,11 +133,19 @@ class ManagerAgent:
         if self.portfolio_manager:
             holdings = self.portfolio_manager.get_holdings(self.name)
             current_prices = {}
+            missing_tickers = []
             for ticker in holdings:
                 if ticker in entry_market_data:
                     current_prices[ticker] = float(
                         entry_market_data[ticker].close.iloc[-1]
                     )
+                else:
+                    missing_tickers.append(ticker)
+            
+            # 부족한 현재가 실시간 조회 (실시간 돌파 등 단일 종목 평가 시 필요)
+            if missing_tickers:
+                prices = UpbitMarketData.get_current_prices_simple(missing_tickers)
+                current_prices.update(prices)
 
             portfolio_info = self.portfolio_manager.get_portfolio_summary(
                 self.name, current_prices=current_prices
@@ -403,11 +411,16 @@ class ManagerAgent:
 
         # 리포트 전송
         try:
-            self._send_cycle_report(market_regime, ticker_stats)
+            current_prices = {
+                t: s["current_price"] for t, s in ticker_stats.items()
+            }
+            # ctx에 있는 가격 정보와 병합 (평가되지 않은 보유 종목 가격 포함)
+            for t, p in ctx.current_prices.items():
+                if t not in current_prices:
+                    current_prices[t] = p
+
+            self._send_cycle_report(market_regime, ticker_stats, current_prices=current_prices)
             if self.portfolio_manager:
-                current_prices = {
-                    t: s["current_price"] for t, s in ticker_stats.items()
-                }
                 self.portfolio_manager.export_portfolio_report(
                     self.name, current_prices=current_prices
                 )
@@ -418,7 +431,7 @@ class ManagerAgent:
     # 리포트
     # ──────────────────────────────────────────────
 
-    def _send_cycle_report(self, market_regime: str, ticker_stats: dict) -> None:
+    def _send_cycle_report(self, market_regime: str, ticker_stats: dict, current_prices: dict = None) -> None:
         """
         매 싸이클 결과 요약 리포트를 텔레그램으로 전송합니다.
         """
@@ -426,7 +439,9 @@ class ManagerAgent:
             return
 
         # 최신 가격 정보를 반영한 요약 정보 가져오기
-        current_prices = {t: s["current_price"] for t, s in ticker_stats.items()}
+        if current_prices is None:
+            current_prices = {t: s["current_price"] for t, s in ticker_stats.items()}
+
         summary = self.portfolio_manager.get_portfolio_summary(
             self.name, current_prices=current_prices
         )
@@ -444,9 +459,7 @@ class ManagerAgent:
         if holdings:
             msg += "📦 *보유 종목 현황*\n"
             for ticker, h in holdings.items():
-                price = ticker_stats.get(ticker, {}).get(
-                    "current_price", h["avg_price"]
-                )
+                price = current_prices.get(ticker, h["avg_price"])
                 cost = h["total_cost"]
                 val = h["volume"] * price
                 pnl = val - cost
@@ -572,10 +585,13 @@ class ManagerAgent:
                 logger.info(
                     f"⏸️ [Realtime] {ticker} 매수 조건은 맞으나 필터링 혹은 잔고 부족으로 보류"
                 )
+                self.notifier.discard_buffer()
             else:
                 ctx.buy_candidates.append((signal, strategy, entry_df))
                 self._select_and_execute_buy(ctx)
 
-        # 3. 마무리 (리포트 전송 등)
-        self._finalize_cycle(ctx, "realtime breakout")
-        self.notifier.flush_buffer()
+                # 3. 마무리 (리포트 전송 등) - 매수 시도 시에만 전송
+                self._finalize_cycle(ctx, "realtime breakout")
+                self.notifier.flush_buffer()
+        else:
+            self.notifier.discard_buffer()

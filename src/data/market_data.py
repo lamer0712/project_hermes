@@ -426,6 +426,26 @@ class UpbitMarketData(BaseMarketData):
             logger.error(f"[Market Data Error] 동적 코인 선정 실패, 기본값 반환: {e}")
             return ["KRW-BTC", "KRW-ETH"]
 
+    @classmethod
+    def get_current_prices_simple(cls, tickers: list[str]) -> dict:
+        """
+        /v1/ticker API를 사용하여 여러 종목의 현재가를 빠르게 조회합니다.
+        """
+        if not tickers:
+            return {}
+        
+        headers = {"accept": "application/json"}
+        url = f"{cls.BASE_URL}/ticker?markets={','.join(tickers)}"
+        
+        try:
+            r = requests.get(url, headers=headers)
+            r.raise_for_status()
+            data = r.json()
+            return {item["market"]: float(item["trade_price"]) for item in data}
+        except Exception as e:
+            logger.error(f"[Market Data Error] 현재가 조회 실패: {e}")
+            return {}
+
 
 if __name__ == "__main__":
     # 테스트 로직
