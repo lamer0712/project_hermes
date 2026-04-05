@@ -543,6 +543,7 @@ class ManagerAgent:
                 # 2분(120초) 쿨타임 체크 (잦은 API 호출 방지 및 재돌파 기회 유지)
                 last_eval = self.breakout_cooldowns.get(ticker, 0)
                 if time.time() - last_eval > 120:
+                    self.breakout_cooldowns[ticker] = time.time()
                     self._execute_early_buy(ticker, current_price)
 
     def _execute_early_buy(self, ticker: str, current_price: float):
