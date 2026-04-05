@@ -185,7 +185,7 @@ class ManagerAgent:
         # ── 리스크 매니저 우선 평가 ──
         if is_held:
             risk_signal = self.risk_manager.evaluate_risk(
-                self.name, ticker, current_price
+                self.name, ticker, current_price, market_regime=ctx.market_regime
             )
             if risk_signal:
                 risk_signal_str = risk_signal.__str__()
