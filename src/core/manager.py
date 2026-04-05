@@ -553,7 +553,10 @@ class ManagerAgent:
             f"🔥 [Realtime Breakout] {ticker} 돌파 감지! (Price: {current_price:,.0f})"
         )
 
-        # 실시간 평가를 위해 필요한 데이터(15분 봉 + 지표) 가져오기
+        # 실시간 평가를 위해 필요한 데이터(15분/60분 봉 + 지표) 가져오기
+        # setup_df = UpbitMarketData.get_ohlcv_with_indicators_new(
+        #     ticker, count=100, interval="minutes/60", current_price=current_price
+        # )
         entry_df = UpbitMarketData.get_ohlcv_with_indicators_new(
             ticker, count=100, interval="minutes/15", current_price=current_price
         )
@@ -604,4 +607,5 @@ class ManagerAgent:
                 self._finalize_cycle(ctx, "realtime breakout")
                 self.notifier.flush_buffer()
         else:
+            logger.info(f"⏸️ [Realtime] 매수 보류: {signal}")
             self.notifier.discard_buffer()
