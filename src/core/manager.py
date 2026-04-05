@@ -63,9 +63,9 @@ class ManagerAgent:
         self.breakout_thresholds = {}  # 실시간 돌파 감시용 기준가 (high_20)
         self.breakout_cooldowns = {}   # 실시간 돌파 평가 쿨타임 기록용
 
-        # 마지막 싸이클의 종목별 평가 결과 저장
         self.last_ticker_stats = {}
         self.current_regime = "ranging"  # 실시간 틱 리스크 관리용 장세 저장
+        self.breakout_counts = {}  # 종목별 연속 돌파 횟수 관리
 
     # ──────────────────────────────────────────────
     # 메인 사이클
@@ -97,6 +97,7 @@ class ManagerAgent:
         # 0.5 실시간 돌파 기준가 업데이트 (실시간 감시용)
         self._update_breakout_thresholds(entry_market_data)
         self.current_regime = market_regime # 실시간용 장세 동기화
+        self.breakout_counts = {} # 매 사이클마다 카운트 초기화 (신선도 유지)
 
         # 1. 컨텍스트 구성
         ctx = self._build_cycle_context(entry_market_data, market_regime)
@@ -545,12 +546,19 @@ class ManagerAgent:
                     self._execute_early_buy(ticker, current_price)
 
     def _execute_early_buy(self, ticker: str, current_price: float):
-        """실시간 돌파가 감지된 종목에 대해 즉시 전략 평가 및 매수를 진행합니다."""
-        # 쿨타임 즉시 갱신
-        self.breakout_cooldowns[ticker] = time.time()
+        """실시간 돌파 감지 시 즉시 평가 및 매수를 시도합니다."""
+        # 연속 돌파 카운팅
+        count = self.breakout_counts.get(ticker, 0) + 1
+        self.breakout_counts[ticker] = count
+
+        if count >= 3:
+            msg = f"🚀 [Triple Breakout] {ticker} 3회 연속 돌파 감지! (Price: {current_price:,.0f})\n강한 상승세가 지속되고 있습니다. 진입 여부를 검토하세요."
+            logger.info(f"🔔 {msg}")
+            self.notifier.send_message(msg)
+            self.breakout_counts[ticker] = 0 # 알림 후 초기화
 
         logger.info(
-            f"🔥 [Realtime Breakout] {ticker} 돌파 감지! (Price: {current_price:,.0f})"
+            f"🔥 [Realtime Breakout] {ticker} 돌파 감지! ({count}회차, Price: {current_price:,.0f})"
         )
 
         # 실시간 평가를 위해 필요한 데이터(15분/60분 봉 + 지표) 가져오기
@@ -598,7 +606,8 @@ class ManagerAgent:
                 ctx.buy_candidates.append((signal, strategy, entry_df))
                 self._select_and_execute_buy(ctx)
 
-                # 매수 성공 시 감시 목록에서 제거
+                # 매수 성공 시 감시 목록 및 카운트 제거
+                self.breakout_counts.pop(ticker, None)
                 holdings = self.portfolio_manager.get_holdings(self.name)
                 if ticker in holdings and holdings[ticker].get("volume", 0) > 0:
                     self.breakout_thresholds.pop(ticker, None)
@@ -607,5 +616,6 @@ class ManagerAgent:
                 self._finalize_cycle(ctx, "realtime breakout")
                 self.notifier.flush_buffer()
         else:
+            self.breakout_thresholds[ticker] = max(self.breakout_thresholds.get(ticker, 0), current_price)
             logger.info(f"⏸️ [Realtime] 매수 보류: {signal}")
             self.notifier.discard_buffer()
