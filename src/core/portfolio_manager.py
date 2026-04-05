@@ -231,22 +231,24 @@ class PortfolioManager:
         if ticker in holdings:
             # 기존 보유 종목 데이터 갱신
             existing = holdings[ticker]
+            # 먼지 수량(Dust) 체크: 기존 수량이 매우 적으면 신규 진입으로 간주하여 메타데이터 초기화
+            is_dust = existing["volume"] < 1e-6
+            
             # 수수료를 포함한 총 취득 원가 계산 (True Cost Basis)
             new_total_cost = existing["total_cost"] + total_cost_including_fee
             new_volume = existing["volume"] + volume
 
-            # 기존 max_price 및 분할손절 단계 유지
             holdings[ticker] = {
                 "volume": new_volume,
                 "avg_price": new_total_cost / new_volume if new_volume > 0 else 0,
                 "total_cost": new_total_cost,
-                "max_price": existing.get("max_price", price),
-                "sl_levels_hit": existing.get("sl_levels_hit", []),
-                "tp_levels_hit": existing.get("tp_levels_hit", []),
-                "atr_14": existing.get("atr_14", 0),
+                "max_price": price if is_dust else existing.get("max_price", price),
+                "sl_levels_hit": [] if is_dust else existing.get("sl_levels_hit", []),
+                "tp_levels_hit": [] if is_dust else existing.get("tp_levels_hit", []),
+                "atr_14": 0 if is_dust else existing.get("atr_14", 0),
                 "strategy": strategy,
-                "custom_sl_price": existing.get("custom_sl_price", None),
-                "custom_tp_price": existing.get("custom_tp_price", None),
+                "custom_sl_price": None if is_dust else existing.get("custom_sl_price", None),
+                "custom_tp_price": None if is_dust else existing.get("custom_tp_price", None),
             }
         else:
             # 수수료를 포함하여 평단가(Breakeven) 및 총 원점 설정

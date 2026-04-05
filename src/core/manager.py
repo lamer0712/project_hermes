@@ -65,6 +65,7 @@ class ManagerAgent:
 
         # 마지막 싸이클의 종목별 평가 결과 저장
         self.last_ticker_stats = {}
+        self.current_regime = "ranging"  # 실시간 틱 리스크 관리용 장세 저장
 
     # ──────────────────────────────────────────────
     # 메인 사이클
@@ -95,6 +96,7 @@ class ManagerAgent:
 
         # 0.5 실시간 돌파 기준가 업데이트 (실시간 감시용)
         self._update_breakout_thresholds(entry_market_data)
+        self.current_regime = market_regime # 실시간용 장세 동기화
 
         # 1. 컨텍스트 구성
         ctx = self._build_cycle_context(entry_market_data, market_regime)
@@ -519,7 +521,7 @@ class ManagerAgent:
             # 1. 보유 종목 리스크 관리 (기존)
             # ──────────────────────────────────────────────
             risk_signal = self.risk_manager.evaluate_risk(
-                self.name, ticker, current_price
+                self.name, ticker, current_price, market_regime=self.current_regime
             )
             if risk_signal:
                 risk_signal_str = risk_signal.__str__()
