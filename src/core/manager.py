@@ -40,9 +40,9 @@ class ManagerAgent:
     STRATEGY_MAP = {
         "recovery": ["PullbackTrend"],
         "weakbullish": ["PullbackTrend", "VWAPReversion"],
-        "bullish": ["Breakout", "PullbackTrend"],
-        "ranging": ["VWAPReversion", "BollingerSqueeze"],
-        "volatile": ["Breakout", "BollingerSqueeze", "VWAPReversion"],
+        "bullish": ["Breakout", "PullbackTrend", "TurtleTrading"],
+        "ranging": ["VWAPReversion"],
+        "volatile": ["Breakout", "VWAPReversion", "TurtleTrading"],
     }
 
     def __init__(

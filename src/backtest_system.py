@@ -18,7 +18,39 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from src.core.manager import ManagerAgent
 from src.core.portfolio_manager import PortfolioManager
 from src.data.market_data import UpbitMarketData
-from src.utils.logger import logger
+from src.utils.logger import logger, setup_logger
+
+
+def reconfigure_logger_for_backtest():
+    """백테스트를 위해 로그 설정을 초기화하고 backtest.log로 격리합니다."""
+    # 기존 핸들러 제거
+    for handler in logger.handlers[:]:
+        logger.removeHandler(handler)
+
+    # 새로운 포맷터
+    formatter = logging.Formatter(
+        "[%(asctime)s] [%(levelname)s] [%(filename)s:%(lineno)d] %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+    )
+
+    # 1. Console Handler
+    console_handler = logging.StreamHandler(sys.stdout)
+    console_handler.setFormatter(formatter)
+    logger.addHandler(console_handler)
+
+    # 2. File Handler (Isolated for Backtest)
+    log_file = "logs/backtest.log"
+    os.makedirs("logs", exist_ok=True)
+    file_handler = logging.FileHandler(log_file, encoding="utf-8")
+    file_handler.setFormatter(formatter)
+    logger.addHandler(file_handler)
+    
+    # 텔레그램 핸들러는 추가하지 않음 (격리 완료)
+    logger.info("========== Backtest Logger Initialized (Isolated) ==========")
+
+
+# 백테스트 시작 전 로거 재설정
+reconfigure_logger_for_backtest()
 
 
 class MockBroker:
@@ -226,6 +258,8 @@ def fetch_and_prepare_historical_data(
         low = df["low"]
         volume = df["volume"]
 
+        df["high_10"] = high.rolling(10).max()
+        df["low_10"] = low.rolling(10).min()
         df["high_20"] = high.rolling(20).max()
         df["low_20"] = low.rolling(20).min()
         df["ma_9"] = close.rolling(9).mean()
@@ -236,6 +270,10 @@ def fetch_and_prepare_historical_data(
         df["rsi_14"] = talib.RSI(close, timeperiod=14)
         df["bb_upper"], df["bb_mid"], df["bb_lower"] = talib.BBANDS(
             close, timeperiod=20, nbdevup=2, nbdevdn=2
+        )
+        # Double Bollinger Bands (1.0 SD)
+        df["bb_upper1"], _, df["bb_lower1"] = talib.BBANDS(
+            close, timeperiod=20, nbdevup=1, nbdevdn=1
         )
         df["bb_width"] = (df["bb_upper"] - df["bb_lower"]) / (df["bb_mid"] + 1e-8)
         df["bb_position"] = (close - df["bb_lower"]) / (

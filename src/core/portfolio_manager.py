@@ -802,8 +802,12 @@ class PortfolioManager:
                 """,
                     (agent_name, strategy),
                 )
-                count = cursor.fetchone()[0]
-                return count[:] > 0 if isinstance(count, tuple) else count > 0
+                res = cursor.fetchone()
+                return res[0] > 0 if res else False
         except Exception as e:
-            logger.error(f"[Manager] 당일 전략 매수 확인 실패: {e}")
+            logger.error(f"[PortfolioManager] has_traded_strategy_today 실패: {e}")
             return False
+
+    def get_trade_history(self, agent_name: str) -> list:
+        """에이전트의 전체 거래 기록을 반환합니다."""
+        return self.db.get_trade_history(agent_name)

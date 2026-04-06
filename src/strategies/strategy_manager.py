@@ -11,6 +11,8 @@ from src.strategies.panic import PanicStrategy
 from src.strategies.vwap_reversion import VWAPReversionStrategy
 from src.strategies.opening_scalp import OpeningScalpStrategy
 from src.strategies.bollinger_squeeze import BollingerSqueezeStrategy
+from src.strategies.turtle_trading import TurtleTradingStrategy
+from src.strategies.double_bollinger import DoubleBollingerStrategy
 
 class StrategyManager:
     """
@@ -30,6 +32,8 @@ class StrategyManager:
         self.register("VWAPReversion", VWAPReversionStrategy)
         self.register("OpeningScalp", OpeningScalpStrategy)
         self.register("BollingerSqueeze", BollingerSqueezeStrategy)
+        self.register("TurtleTrading", TurtleTradingStrategy)
+        self.register("DoubleBollinger", DoubleBollingerStrategy)
 
 
     def __init__(self):

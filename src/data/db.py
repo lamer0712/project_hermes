@@ -273,3 +273,13 @@ class DatabaseManager:
                 WHERE timestamp <= datetime('now', ?)
             ''', (f'-{days} days',))
             logger.info(f"[DB] {days}일 이상 경과한 trade_history 전체 기록 삭제 완료")
+    def get_trade_history(self, agent_name: str) -> list:
+        """에이전트의 전체 거래 기록을 반환합니다."""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                SELECT * FROM trade_history 
+                WHERE agent_name = ? 
+                ORDER BY timestamp ASC
+            ''', (agent_name,))
+            return [dict(row) for row in cursor.fetchall()]

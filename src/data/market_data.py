@@ -266,6 +266,8 @@ class UpbitMarketData(BaseMarketData):
         volume = df["volume"]
 
         # high / low
+        df["high_10"] = high.rolling(10).max()
+        df["low_10"] = low.rolling(10).min()
         df["high_20"] = high.rolling(20).max()
         df["low_20"] = low.rolling(20).min()
 
@@ -282,6 +284,10 @@ class UpbitMarketData(BaseMarketData):
         ## Bollinger Bands
         df["bb_upper"], df["bb_mid"], df["bb_lower"] = talib.BBANDS(
             close, timeperiod=20, nbdevup=2, nbdevdn=2
+        )
+        # Double Bollinger Bands (1.0 SD)
+        df["bb_upper1"], _, df["bb_lower1"] = talib.BBANDS(
+            close, timeperiod=20, nbdevup=1, nbdevdn=1
         )
         df["bb_width"] = (df["bb_upper"] - df["bb_lower"]) / (df["bb_mid"] + 1e-8)
         df["bb_position"] = (close - df["bb_lower"]) / (df["bb_upper"] - df["bb_lower"])
