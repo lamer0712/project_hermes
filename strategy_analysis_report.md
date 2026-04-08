@@ -1,16 +1,16 @@
 # 📊 Strategy Performance Analysis Report
 
-**Analysis Period:** 15 Days
-**Generated At:** 2026-04-08 23:33:13
+**Analysis Period:** 30 Days
+**Generated At:** 2026-04-09 00:21:27
 
 ## 1. Performance Overview
 
-| Strategy      |   ROI (%) |   Win Rate (%) |   Profit Factor |   RR Ratio |   MDD (%) |   Total Trades |
-|:--------------|----------:|---------------:|----------------:|-----------:|----------:|---------------:|
-| VWAPReversion |  3.35952  |        66.0714 |        1.68446  |   0.864994 | -1.78504  |            107 |
-| Breakout      |  0.674444 |        50      |        2.0428   |   2.0428   | -0.382955 |             26 |
-| MeanReversion | -0.113236 |        66.6667 |        0.81695  |   0.408475 | -0.539873 |             43 |
-| PullbackTrend | -1.04423  |        25      |        0.113584 |   0.340751 | -1.04423  |              8 |
+| Strategy      |    ROI (%) |   Win Rate (%) |   Profit Factor |   RR Ratio |   MDD (%) |   Total Trades |
+|:--------------|-----------:|---------------:|----------------:|-----------:|----------:|---------------:|
+| VWAPReversion |  6.00986   |       62.6374  |       1.63717   |   0.976558 |  -2.40001 |            176 |
+| Breakout      |  2.02356   |       46.6019  |       1.30812   |   1.49889  |  -1.32193 |            190 |
+| MeanReversion | -0.0986859 |       71.0526  |       0.841535  |   0.342848 |  -0.54343 |             53 |
+| PullbackTrend | -6.95069   |        7.69231 |       0.0309058 |   0.370869 |  -6.95069 |             52 |
 
 ## 2. Summary & Strategy Insight
 

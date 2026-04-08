@@ -25,8 +25,8 @@ class ManagerAgent:
 
     # 업비트 최소 주문 금액
     MIN_ORDER_AMOUNT = 5000
-    MAX_POSITION_RATIO = 0.55  # 0.45 -> 0.55 (챔피언 집중 투자)
-    MAX_POSITIONS = 5          # 10 -> 5 (소수 정예 보유)
+    MAX_POSITION_RATIO = 0.45  # 0.40 -> 0.45 (챔피언 출력 상향)
+    MAX_POSITIONS = 10         # 8 -> 10 (자본 활용 유연성 극대화)
 
     # 시장 Regime에 따른 전략 매핑
     # STRATEGY_MAP = {
@@ -40,10 +40,10 @@ class ManagerAgent:
     STRATEGY_MAP = {
         "recovery": ["VWAPReversion"],
         "weakbullish": ["VWAPReversion"],
-        "bullish": ["Breakout", "VWAPReversion"],
-        "earlybreakout": ["Breakout"],
+        "bullish": ["VWAPReversion"],
+        "earlybreakout": ["VWAPReversion"],
         "ranging": ["VWAPReversion"],
-        "volatile": ["Breakout", "VWAPReversion"],
+        "volatile": ["VWAPReversion"],
     }
     SELL_COOLDOWN_CYCLES = 8  # 손절 후 8사이클(2시간) 동안 동일 종목 재진입 금지
 

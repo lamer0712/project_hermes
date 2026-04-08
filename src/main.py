@@ -266,8 +266,8 @@ def main():
         )
 
     # 오프닝 스캘핑 5분 스케줄 (백테스트 결과 승률 저조로 인해 임시 중단)
-    for m in range(0, 60, 5):
-        schedule.every().hour.at(f"{m:02d}:30").do(execute_scalp_cycle, manager=manager)
+    # for m in range(0, 60, 5):
+    #     schedule.every().hour.at(f"{m:02d}:30").do(execute_scalp_cycle, manager=manager)
 
     schedule.every().day.at("00:00").do(
         execute_daily_sync, pm=pm, manager=manager, notifier=notifier
