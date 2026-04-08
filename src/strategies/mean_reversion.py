@@ -149,19 +149,34 @@ class MeanReversionStrategy(BaseStrategy):
             conditions += 1
             reasons.append(f"단기급락({change_5*100:.1f}%)")
 
-        conf = min(0.4 + (conditions * 0.15), 1.0)
+        # ------------------------------
+        # ENTRY (Continuous Scaling Confidence)
+        # ------------------------------
         if conditions >= 2:
+            # 1. RSI Score (RSI 30 -> 0, RSI 15 -> 1.0)
+            rsi_val = float(current.get("rsi_14", 50))
+            rsi_score = min(max((30 - rsi_val) / 15.0, 0.0), 1.0)
 
-            rsi_val = float(entry_market_data.iloc[-1].get("rsi_14", 50))
-            rsi_bonus = self.rsi_tiebreaker(rsi_val, mode="oversold")
-            final_conf = min(conf + rsi_bonus, 1.0)
+            # 2. Panic Drop Score (설정치 -6% -> 0, -12% -> 1.0)
+            panic_cfg = entry_cfg["panic_drop_pct"] # -0.06
+            panic_score = min(max((change_5 / panic_cfg - 1.0), 0.0), 1.0)
+
+            # 3. Volume Score (Multiplier x1.8 -> 0, x3.6 -> 1.0)
+            vol_mult = entry_cfg["volume_multiplier"] # 1.8
+            vol_score = min(max((volume / (vol_ma * vol_mult) - 1.0), 0.0), 1.0)
+
+            # 가중합 (RSI 50% : Panic 30% : Vol 20%)
+            base_score = 0.5 * rsi_score + 0.3 * panic_score + 0.2 * vol_score
+            
+            # 동점 방지용 타이브레이커 포함 최종 정규화 (0.3 ~ 1.0)
+            final_conf = min(0.3 + (base_score * 0.7) + self.rsi_tiebreaker(rsi_val, "oversold"), 1.0)
 
             return Signal(
                 SignalType.BUY,
                 ticker,
                 " | ".join(reasons),
-                conf * self.params["position_size_ratio"],
+                final_conf * self.params["position_size_ratio"],
                 final_conf,
             )
 
-        return Signal(SignalType.HOLD, ticker, f"진입대기", 0, conf)
+        return Signal(SignalType.HOLD, ticker, f"진입대기", 0, 0.1)

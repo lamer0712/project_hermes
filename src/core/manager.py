@@ -39,11 +39,11 @@ class ManagerAgent:
     # }
     STRATEGY_MAP = {
         "recovery": ["PullbackTrend"],
-        "weakbullish": ["PullbackTrend", "VWAPReversion"],
+        "weakbullish": ["PullbackTrend", "VWAPReversion", "MeanReversion"],
         "bullish": ["Breakout", "PullbackTrend"],
         "earlybreakout": ["Breakout"],
-        "ranging": ["VWAPReversion"],
-        "volatile": ["Breakout", "VWAPReversion"],
+        "ranging": ["VWAPReversion", "MeanReversion"],
+        "volatile": ["Breakout", "VWAPReversion", "MeanReversion"],
     }
 
     def __init__(
@@ -360,7 +360,7 @@ class ManagerAgent:
                 )
                 break
 
-            if cand_signal.confidence <= 0.3:
+            if cand_signal.confidence <= 0.65:
                 break
 
             ticker = cand_signal.ticker

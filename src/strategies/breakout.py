@@ -142,55 +142,48 @@ class BreakoutStrategy(BaseStrategy):
         if price <= recent_high * (1.0 + entry_cfg["breakout_buffer"]):
             return Signal(SignalType.HOLD, ticker, "진입대기 - 돌파 조건 미달", 0, 0.1)
 
-        strength = 0.4
+        strength = 0.5 # Base
+        
+        # 1. Volume Score (Multiplier x2.2 -> 0, x3.3 -> 1.0)
+        vol_mult = entry_cfg["volume_multiplier"] # 2.2
+        vol_score = min(max((volume / (volume_ma * vol_mult) - 1.0) / 0.5, 0.0), 1.0)
 
-        # volume trigger (2.2배 이상 강력한 수급 확인)
-        if volume > volume_ma * entry_cfg["volume_multiplier"]:
-            strength += 0.2
-            vol_ratio = (volume / volume_ma) * 100 if volume_ma > 0 else 0
-            reasons.append("거래량터짐")
+        # 2. Breakout Price Score (Buffer 0.5% -> 0, 1.5% -> 1.0)
+        breakout_price_target = recent_high * (1.0 + entry_cfg["breakout_buffer"])
+        breakout_score = min(max((price / breakout_price_target - 1.0) / 0.01, 0.0), 1.0)
 
-        # price acceleration
-        if price > prev_price * 1.002:
-            strength += 0.2
-            accel_pct = (
-                ((price - prev_price) / prev_price) * 100 if prev_price > 0 else 0
-            )
-            reasons.append("가속도붙음")
+        # 3. Acceleration Score (0.2% -> 0, 1.0% -> 1.0)
+        accel_pct = (price / prev_price - 1.0) if prev_price > 0 else 0
+        accel_score = min(max((accel_pct - 0.002) / 0.008, 0.0), 1.0)
 
-        # pullback breakout
-        if price > recent_high * 0.995 and prev_prev_close > prev_price < price:
-            strength += 0.2
-            reasons.append("눌림목돌파")
-
-        # Overheating penalty
+        # 가중합 (Vol 50% : Breakout 30% : Accel 20%)
+        base_score = 0.5 * vol_score + 0.3 * breakout_score + 0.2 * accel_score
+        
+        # 패널티 적용 (기존 로직 유지)
         if prev_price > prev_prev_close * 1.02 and price > prev_price * 1.02:
-            strength *= 0.8
+            base_score *= 0.8
             reasons.append("단기과열감점")
-
-        # downtrend penalty
         if self.is_downtrend(entry_market_data):
-            strength *= 0.7
+            base_score *= 0.7
             reasons.append("역배열감점")
+
+        # 최종 정규화 (0.3 ~ 1.0)
+        rsi_val = float(current.get("rsi_14", 50))
+        final_conf = min(0.3 + (base_score * 0.7) + self.rsi_tiebreaker(rsi_val, "momentum"), 1.0)
 
         # 🔥 Bullish Confirmation (15m 종가 양봉 혹은 긴 밑꼬리)
         if not self.is_bullish_candle(entry_market_data):
             return Signal(
-                SignalType.HOLD, ticker, "진입대기 - 양봉/밑꼬리 컨펌 부족", 0, strength
+                SignalType.HOLD, ticker, "진입대기 - 양봉/밑꼬리 컨펌 부족", 0, final_conf
             )
 
-        if strength >= 0.6:
+        if final_conf >= 0.6:
             size_ratio = self.params["position_size_ratio"]
-
-            rsi_val = float(entry_market_data.iloc[-1].get("rsi_14", 50))
-            rsi_bonus = self.rsi_tiebreaker(rsi_val, mode="momentum")
-            final_conf = min(strength + rsi_bonus, 1.0)
-
             return Signal(
                 SignalType.BUY,
                 ticker,
-                " | ".join(reasons),
-                strength * size_ratio,
+                " | ".join(reasons) if reasons else "돌파성공",
+                final_conf * size_ratio,
                 final_conf,
             )
 

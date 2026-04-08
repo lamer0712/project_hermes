@@ -137,56 +137,42 @@ class PullbackTrendStrategy(BaseStrategy):
         if not setup_ok:
             return Signal(SignalType.HOLD, ticker, "진입대기 - 1h 눌림폭 부족", 0, 0.01)
 
-        # =========================
-        # ENTRY (15m)
-        # =========================
-
+        # ------------------------------
+        # ENTRY (Continuous Scaling Confidence)
+        # ------------------------------
         reasons = []
-        strength = 0
+        
+        # 1. Trend Strength Score (ADX 28 -> 0, 45 -> 1.0)
+        adx = float(entry_market_data.adx_14.iloc[-1])
+        adx_score = min(max((adx - 28) / 17.0, 0.0), 1.0)
 
-        # 역배열 시 진입 금지
-        if self.is_downtrend(entry_market_data):
-            return Signal(SignalType.HOLD, ticker, "진입대기 - 15m 하락세", 0, 0.1)
+        # 2. Bounce Intensity Score (RSI 반등폭 1 -> 0, 8 -> 1.0)
+        rsi_diff = rsi_entry - prev_rsi_entry
+        rsi_bounce_score = min(max((rsi_diff - 1.0) / 7.0, 0.0), 1.0)
 
-        # RSI 골든크로스 컨펌 (40 기준)
-        rsi_cross_trigger = (
-            rsi_entry > self.params["entry"]["rsi_threshold"]
-            and prev_rsi_entry <= self.params["entry"]["rsi_threshold"]
-        )
+        # 3. Volume Score (Multiplier 2.2 -> 0, 4.4 -> 1.0)
+        vol_mult = self.params["entry"]["volume_multiplier"] # 2.2
+        vol_score = min(max((volume / (vol_ma * vol_mult) - 1.0), 0.0), 1.0)
 
-        if rsi_cross_trigger:
-            strength += 0.5
-            reasons.append(f"RSI반등({rsi_entry:.0f})")
-
-        # MA9 돌파 (가격 회복 확인)
+        # 가중합 (ADX 40% : Bounce 30% : Vol 30%)
+        base_score = 0.4 * adx_score + 0.3 * rsi_bounce_score + 0.3 * vol_score
+        
+        # 최소 조건 (MA9 돌파 혹은 RSI 크로스 중 하나는 필수)
         ma_cross = prev_price <= prev_ma9 and current_price > ma9
-
-        if ma_cross:
-            strength += 0.3
-            reasons.append(f"MA9돌파")
-
-        # 강력한 수급 확인 (2.2배)
-        volume_trigger = volume > vol_ma * self.params["entry"]["volume_multiplier"]
-
-        if volume_trigger:
-            strength += 0.4
-            reasons.append(f"거래량급증")
-
-        # 🔥 Bullish Confirmation (15m 종가 양봉 필수)
-        if current_price <= prev_price:
-             return Signal(SignalType.HOLD, ticker, "진입대기 - 양봉 컨펌 부족", 0, strength)
-
-        if strength >= 0.7:
-            size_ratio = self.params["position_size_ratio"]
+        rsi_cross = rsi_entry > self.params["entry"]["rsi_threshold"]
+        
+        if (ma_cross or rsi_cross) and volume > vol_ma * 1.5:
+            # 최종 정규화 (0.3 ~ 1.0)
             rsi_bonus = self.rsi_tiebreaker(rsi_entry, mode="oversold")
-            final_conf = min(strength + rsi_bonus, 1.0)
-
+            final_conf = min(0.3 + (base_score * 0.7) + rsi_bonus, 1.0)
+            
+            size_ratio = self.params["position_size_ratio"]
             return Signal(
                 SignalType.BUY,
                 ticker,
-                " | ".join(reasons),
-                strength * size_ratio,
+                " | ".join(reasons) if reasons else "추세눌림목진입",
+                final_conf * size_ratio,
                 final_conf,
             )
 
-        return Signal(SignalType.HOLD, ticker, f"진입대기", 0, strength)
+        return Signal(SignalType.HOLD, ticker, f"진입대기", 0, 0.1)
