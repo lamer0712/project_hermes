@@ -25,8 +25,8 @@ class ManagerAgent:
 
     # 업비트 최소 주문 금액
     MIN_ORDER_AMOUNT = 5000
-    MAX_POSITION_RATIO = 0.3
-    MAX_POSITIONS = 5
+    MAX_POSITION_RATIO = 0.55  # 0.45 -> 0.55 (챔피언 집중 투자)
+    MAX_POSITIONS = 5          # 10 -> 5 (소수 정예 보유)
 
     # 시장 Regime에 따른 전략 매핑
     # STRATEGY_MAP = {
@@ -39,11 +39,11 @@ class ManagerAgent:
     # }
     STRATEGY_MAP = {
         "recovery": ["VWAPReversion"],
-        "weakbullish": ["VWAPReversion", "MeanReversion"],
-        "bullish": ["Breakout", "PullbackTrend"],
+        "weakbullish": ["VWAPReversion"],
+        "bullish": ["Breakout", "VWAPReversion"],
         "earlybreakout": ["Breakout"],
-        "ranging": ["VWAPReversion", "MeanReversion"],
-        "volatile": ["Breakout", "VWAPReversion", "MeanReversion"],
+        "ranging": ["VWAPReversion"],
+        "volatile": ["Breakout", "VWAPReversion"],
     }
     SELL_COOLDOWN_CYCLES = 8  # 손절 후 8사이클(2시간) 동안 동일 종목 재진입 금지
 
@@ -371,7 +371,7 @@ class ManagerAgent:
                 )
                 break
 
-            if cand_signal.confidence <= 0.65:
+            if cand_signal.confidence <= 0.65:  # 0.58 -> 0.65 (품질 필터 원복)
                 break
 
             ticker = cand_signal.ticker

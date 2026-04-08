@@ -19,14 +19,14 @@ class VWAPReversionStrategy(BaseStrategy):
     def get_default_params(self) -> dict:
         return {
             "entry": {
-                "vwap_distance_pct": -0.007,  # VWAP 대비 최소 0.7% 이탈 (공격적으로 하향)
+                "vwap_distance_pct": -0.007,  # 0.6% -> 0.7% (엄격한 타점 원복)
                 "rsi_threshold": 42,  # RSI 42 이하 (진입 빈도 상향)
             },
             "exit": {
-                "rsi_threshold": 65,  # RSI 65 도달 시 청산 (반등 완료)
-                "vwap_buffer": 0.002,  # VWAP 도달 부근에서 청산 (0.2%)
+                "rsi_threshold": 70,   # 65 -> 70 (반등 수익 더 길게)
+                "vwap_buffer": 0.005,  # 0.2% -> 0.5% (VWAP 위까지 홀딩)
             },
-            "position_size_ratio": 1.0,  # 과대낙폭(안전한 자리)이므로 최대 투입 승수
+            "position_size_ratio": 1.0,
         }
 
     def evaluate(

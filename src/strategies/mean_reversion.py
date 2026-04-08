@@ -35,10 +35,10 @@ class MeanReversionStrategy(BaseStrategy):
                 "panic_drop_pct": -0.06,
             },
             "exit": {
-                "rsi_threshold": 75,  # 80 -> 75 (롤백: 적정 수익 확보)
-                "bb_position_threshold": 0.9,
+                "rsi_threshold": 65,   # 75 -> 65 (수익 빠르게 확정)
+                "bb_position_threshold": 0.75,  # 0.9 -> 0.75 (상단 도달 전 매도)
             },
-            "position_size_ratio": 0.25,
+            "position_size_ratio": 0.40,  # 0.25 -> 0.40 (비중 확대)
         }
 
     def evaluate(
