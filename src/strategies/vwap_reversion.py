@@ -19,8 +19,8 @@ class VWAPReversionStrategy(BaseStrategy):
     def get_default_params(self) -> dict:
         return {
             "entry": {
-                "vwap_distance_pct": -0.01,  # VWAP 대비 최소 1% 이탈
-                "rsi_threshold": 38,  # RSI 38 이하 (과매도)
+                "vwap_distance_pct": -0.007,  # VWAP 대비 최소 0.7% 이탈 (공격적으로 하향)
+                "rsi_threshold": 42,  # RSI 42 이하 (진입 빈도 상향)
             },
             "exit": {
                 "rsi_threshold": 65,  # RSI 65 도달 시 청산 (반등 완료)

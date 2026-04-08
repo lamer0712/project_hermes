@@ -24,21 +24,21 @@ class MeanReversionStrategy(BaseStrategy):
             "regime": "ranging",
             "setup": {
                 "timeframe": "1h",
-                "rsi_threshold": 48,
-                "bb_position_threshold": 0.25,
+                "rsi_threshold": 40,  # 48 -> 40 (더 깊은 침체)
+                "bb_position_threshold": 0.15,  # 0.25 -> 0.15 (밴드 하단 근접)
             },
             "entry": {
                 "timeframe": "15m",
-                "rsi_threshold": 33,
-                "bb_lower_threshold": 0.12,
-                "volume_multiplier": 1.3,
-                "panic_drop_pct": -0.04,
+                "rsi_threshold": 28,  # 33 -> 28 (초과매도)
+                "bb_lower_threshold": 0.08,  # 0.12 -> 0.08 (이탈 심화)
+                "volume_multiplier": 1.8,  # 1.3 -> 1.8 (거래량 폭발 확인)
+                "panic_drop_pct": -0.06,  # -0.04 -> -0.06 (패닉 드랍 타겟)
             },
             "exit": {
                 "rsi_threshold": 70,
                 "bb_position_threshold": 0.8,
             },
-            "position_size_ratio": 0.3,
+            "position_size_ratio": 0.25,  # 비중 다시 상향 (엄선된 기회에 집중)
         }
 
     def evaluate(

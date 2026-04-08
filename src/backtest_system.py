@@ -300,9 +300,9 @@ def fetch_and_prepare_historical_data(
     return df
 
 
-def backtest_system(days: int = 5, update: bool = False):
+def backtest_system(days: int = 5, update: bool = False, force_strategy: str = None):
     logger.info(
-        f"========== System execution_trading_cycle {days} Days Backtest Start =========="
+        f"========== System execution_trading_cycle {days} Days Backtest Start {' (Strategy: ' + force_strategy + ')' if force_strategy else ''} =========="
     )
 
     # 1. 사이드이펙트 격리된 포트폴리오 매니저 초기화
@@ -318,6 +318,17 @@ def backtest_system(days: int = 5, update: bool = False):
     pm.allocate("crypto_manager", 1000000)
 
     manager = ManagerAgent("crypto_manager", pm)
+    
+    # 전략 강제 고정 (개별 전략 분석용)
+    if force_strategy:
+        logger.info(f"[Backtest] 전략 고정: {force_strategy}")
+        # 모든 장세에 대해 해당 전략만 활성화
+        new_map = {}
+        regimes = ["recovery", "weakbullish", "bullish", "earlybreakout", "ranging", "volatile", "neutral"]
+        for r in regimes:
+            new_map[r] = [force_strategy]
+        manager.STRATEGY_MAP = new_map
+
     # 핵심 통신·결제 모듈 Mocking
     manager.broker = MockBroker(pm)
     manager.notifier = MockNotifier()
@@ -377,7 +388,7 @@ def backtest_system(days: int = 5, update: bool = False):
         logger.error(
             "KRW-BTC 데이터 수집 실패로 마켓 Regime 계산이 불가하여 종료합니다."
         )
-        return
+        return None
 
     # 3. 공통 타임라인 생성
     # BTC 15m 캔들의 Time 인덱스를 시계열로 삼음 (이미 지표 계산때문에 초반 100개 캔들은 결측치 소거)
@@ -480,6 +491,7 @@ def backtest_system(days: int = 5, update: bool = False):
 
     # Mock Broker에 잔고 요청 대신 PortfolioManager의 내부 인메모리 정보로 정산
     summary = pm.get_portfolio_summary("crypto_manager")
+    summary["mdd"] = calculate_mdd(value_history)
 
     logger.info(f"초기 캐피탈: {summary['initial_capital']:,.0f} KRW")
     logger.info(
@@ -489,9 +501,9 @@ def backtest_system(days: int = 5, update: bool = False):
     logger.info(f"승률: {summary['win_rate']:.1f}%")
     logger.info(f"Profit Factor: {summary['profit_factor']:.2f}")
     logger.info(f"손익비 (RR): {summary['risk_reward_ratio']:.2f}")
+    logger.info(f"최대 낙폭 (MDD): {summary['mdd']:+.2f}%")
 
-    mdd = calculate_mdd(value_history)
-    logger.info(f"최대 낙폭 (MDD): {mdd:+.2f}%")
+    return summary
 
     if summary["holdings"]:
         logger.info("\n[현재 가상 보유 종목]")
