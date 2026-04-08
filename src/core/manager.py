@@ -41,6 +41,7 @@ class ManagerAgent:
         "recovery": ["PullbackTrend"],
         "weakbullish": ["PullbackTrend", "VWAPReversion"],
         "bullish": ["Breakout", "PullbackTrend", "TurtleTrading"],
+        "earlybreakout": ["Breakout", "TurtleTrading"],
         "ranging": ["VWAPReversion"],
         "volatile": ["Breakout", "VWAPReversion", "TurtleTrading"],
     }
