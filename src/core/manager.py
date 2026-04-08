@@ -38,13 +38,14 @@ class ManagerAgent:
     #     # "panic": ["Panic"],
     # }
     STRATEGY_MAP = {
-        "recovery": ["PullbackTrend"],
-        "weakbullish": ["PullbackTrend", "VWAPReversion", "MeanReversion"],
+        "recovery": ["VWAPReversion"],
+        "weakbullish": ["VWAPReversion", "MeanReversion"],
         "bullish": ["Breakout", "PullbackTrend"],
         "earlybreakout": ["Breakout"],
         "ranging": ["VWAPReversion", "MeanReversion"],
         "volatile": ["Breakout", "VWAPReversion", "MeanReversion"],
     }
+    SELL_COOLDOWN_CYCLES = 8  # 손절 후 8사이클(2시간) 동안 동일 종목 재진입 금지
 
     def __init__(
         self,
@@ -63,6 +64,7 @@ class ManagerAgent:
         )
         self.breakout_thresholds = {}  # 실시간 돌파 감시용 기준가 (high_20)
         self.breakout_cooldowns = {}   # 실시간 돌파 평가 쿨타임 기록용
+        self.sell_cooldowns = {}       # 손절 후 재진입 방지 쿨다운 {ticker: remaining_cycles}
 
         self.last_ticker_stats = {}
         self.current_regime = "ranging"  # 실시간 틱 리스크 관리용 장세 저장
@@ -99,6 +101,12 @@ class ManagerAgent:
         self._update_breakout_thresholds(entry_market_data)
         self.current_regime = market_regime # 실시간용 장세 동기화
         self.breakout_counts = {} # 매 사이클마다 카운트 초기화 (신선도 유지)
+        # 손절 쿨다운 카운터 감소
+        expired = [t for t, c in self.sell_cooldowns.items() if c <= 1]
+        for t in expired:
+            del self.sell_cooldowns[t]
+        for t in self.sell_cooldowns:
+            self.sell_cooldowns[t] -= 1
 
         # 1. 컨텍스트 구성
         ctx = self._build_cycle_context(entry_market_data, market_regime)
@@ -198,6 +206,9 @@ class ManagerAgent:
                 self.execution_manager.execute_sell(
                     self.name, ticker, current_price, risk_signal
                 )
+                # 손절인 경우 쿨다운 등록 (재진입 방지)
+                if "손절" in risk_signal.reason or "동적 손절" in risk_signal.reason:
+                    self.sell_cooldowns[ticker] = self.SELL_COOLDOWN_CYCLES
                 return TickerEvaluation(
                     ticker=ticker,
                     regime=None,
@@ -366,6 +377,9 @@ class ManagerAgent:
             ticker = cand_signal.ticker
             # 이미 이번 사이클에서 매수했거나 보유 중인 종목 스킵
             if ticker in self.portfolio_manager.get_holdings(self.name):
+                continue
+            # 손절 쿨다운 중인 종목 스킵
+            if ticker in self.sell_cooldowns and self.sell_cooldowns[ticker] > 0:
                 continue
 
             current_price = float(cand_market_data.close.iloc[-1])

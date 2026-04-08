@@ -177,7 +177,7 @@ class BreakoutStrategy(BaseStrategy):
                 SignalType.HOLD, ticker, "진입대기 - 양봉/밑꼬리 컨펌 부족", 0, final_conf
             )
 
-        if final_conf >= 0.6:
+        if final_conf >= 0.7:
             size_ratio = self.params["position_size_ratio"]
             return Signal(
                 SignalType.BUY,
