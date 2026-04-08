@@ -1,21 +1,18 @@
 # 📊 Strategy Performance Analysis Report
 
 **Analysis Period:** 15 Days
-**Generated At:** 2026-04-08 19:03:44
+**Generated At:** 2026-04-08 22:09:38
 
 ## 1. Performance Overview
 
 | Strategy      |   ROI (%) |   Win Rate (%) |   Profit Factor |   RR Ratio |   MDD (%) |   Total Trades |
 |:--------------|----------:|---------------:|----------------:|-----------:|----------:|---------------:|
-| VWAPReversion |  2.97178  |        60      |        1.43427  |   0.956182 |  -2.38009 |            145 |
-| MeanReversion | -0.304131 |        72.8324 |        0.884668 |   0.329995 |  -1.28363 |            239 |
-| Breakout      | -0.489793 |        51.6667 |        0.881158 |   0.824309 |  -1.48445 |            109 |
-| PullbackTrend | -1.42616  |        57.1429 |        0.230597 |   0.172948 |  -1.60462 |             13 |
+| MeanReversion | -0.160333 |        77.0186 |        0.940722 |   0.280699 |  -1.30547 |            227 |
 
 ## 2. Summary & Strategy Insight
 
-- 🚀 **Best Performer:** VWAPReversion
-- ⚠️ **Worst Performer:** PullbackTrend
+- 🚀 **Best Performer:** MeanReversion
+- ⚠️ **Worst Performer:** MeanReversion
 
 ### 💡 Analysis Insights:
 - **ROI & Win Rate:** 각 전략의 개별 수익률과 승률을 비교하여 어떤 장세에 적합한지 판단합니다.

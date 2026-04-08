@@ -11,26 +11,31 @@ from src.backtest_system import backtest_system
 from src.strategies.strategy_manager import StrategyManager
 from src.utils.logger import logger
 
-def run_strategy_analysis(days: int = 15):
+def run_strategy_analysis(days: int = 15, strategy_name: str = None):
     sm = StrategyManager()
     all_strategies = sm.list_strategies()
     
     # 분석할 전략 목록 (보유 중인 주요 전략 중심)
-    target_strategies = [
+    default_targets = [
         "Breakout",
         "PullbackTrend",
         "VWAPReversion",
-        "MeanReversion",
-        # "Panic",
-        # "Bearish"
+        "MeanReversion"
     ]
     
-    # 실제 등록된 전략만 필터링
-    target_strategies = [s for s in target_strategies if s in all_strategies]
+    # 1. 특정 전략이 지정된 경우
+    if strategy_name:
+        if strategy_name not in all_strategies:
+            logger.error(f"❌ '{strategy_name}' 전략을 찾을 수 없습니다. 사용 가능한 전략: {all_strategies}")
+            return
+        target_strategies = [strategy_name]
+    else:
+        # 2. 전체 전략 (등록된 것만 필터링)
+        target_strategies = [s for s in default_targets if s in all_strategies]
     
     results = []
     
-    logger.info(f"🔍 총 {len(target_strategies)}개 전략에 대한 개별 분석 시작...")
+    logger.info(f"🔍 총 {len(target_strategies)}개 전략 분석 시작... (전략: {target_strategies})")
     
     for strategy in target_strategies:
         try:
@@ -91,6 +96,7 @@ if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser(description="Strategy Performance Analyzer")
     parser.add_argument("--days", type=int, default=15, help="Backtest days")
+    parser.add_argument("--strategy", "-s", type=str, default=None, help="Specific strategy name to test")
     args = parser.parse_args()
     
-    run_strategy_analysis(days=args.days)
+    run_strategy_analysis(days=args.days, strategy_name=args.strategy)

@@ -27,13 +27,13 @@ class BreakoutStrategy(BaseStrategy):
             "regime": "volatile",
             "setup": {
                 "timeframe": "1h",
-                "bb_width_threshold": 0.06,
+                "bb_width_threshold": 0.05,  # 0.06 -> 0.05 (더 강한 수축 요구)
                 "adx_threshold": 12,
             },
             "entry": {
                 "timeframe": "15m",
-                "volume_multiplier": 1.5,
-                "breakout_buffer": 0.003,
+                "volume_multiplier": 2.2,  # 1.5 -> 2.2 (가짜 돌파 방지 위해 대폭 상향)
+                "breakout_buffer": 0.005,  # 0.003 -> 0.005 (확실한 돌파 버퍼)
             },
             "exit": {
                 "rsi_threshold": 85,
@@ -66,6 +66,8 @@ class BreakoutStrategy(BaseStrategy):
 
         bb_upper = float(current.get("bb_upper", price))
         bb_mid = float(current.get("bb_mid", price))
+        bb_lower = float(current.get("bb_lower", price))
+        bb_width = (bb_upper - bb_lower) / bb_mid if bb_mid > 0 else 1.0
 
         rsi = float(current.get("rsi_14", 50))
 
@@ -110,7 +112,11 @@ class BreakoutStrategy(BaseStrategy):
         # =========================
         # ENTRY (15m)
         # =========================
-        # 거시적 하락세(60분봉 정배열 확인: EMA 20 > 50 > 200) 필터링 추가
+        # 1. 수축 확인: 밴드 폭이 임계값(0.05) 이하여야 에너지가 응축됨
+        if bb_width > self.params["setup"]["bb_width_threshold"]:
+             return Signal(SignalType.HOLD, ticker, f"진입대기 - 변동성 발산 중 (BB Width:{bb_width:.3f})", 0, 0.05)
+
+        # 2. 거시적 하락세(60분봉 정배열 확인: EMA 20 > 50 > 200) 필터링 추가
         if not self.is_bullish_trend_htf(setup_market_data):
             return Signal(
                 SignalType.HOLD,
@@ -120,24 +126,25 @@ class BreakoutStrategy(BaseStrategy):
                 0.1,
             )
 
-        # RSI 과매수 필터링 (70 이상 제외)
-        if not self.is_not_overbought(entry_market_data, threshold=70):
-            return Signal(SignalType.HOLD, ticker, "진입대기 - RSI 과매수 구역", 0, 0.1)
+        # 3. RSI 과매수 필터링 (70 -> 75로 완화하여 강한 추세 초입 허용)
+        if rsi > 75:
+            return Signal(SignalType.HOLD, ticker, "진입대기 - RSI 이미 과열", 0, 0.1)
 
-        recent_high = entry_market_data.high.rolling(10).max().iloc[-2]
+        # 4. 돌파 고점 확인 (20캔들 전고점 사용) 룩백 확장
+        recent_high = entry_market_data.high.rolling(20).max().iloc[-2]
         prev_prev_close = entry_market_data.close.iloc[-3]
 
         reasons = []
 
         entry_cfg = self.params["entry"]
 
-        # not breakout (확실한 돌파: 고점 대비 +0.3% 초과 필요)
-        if price <= recent_high * 1.003:
+        # 확실한 돌파: 고점 대비 버퍼(+0.5%) 초과 필요
+        if price <= recent_high * (1.0 + entry_cfg["breakout_buffer"]):
             return Signal(SignalType.HOLD, ticker, "진입대기 - 돌파 조건 미달", 0, 0.1)
 
-        strength = 0.3
+        strength = 0.4
 
-        # volume trigger
+        # volume trigger (2.2배 이상 강력한 수급 확인)
         if volume > volume_ma * entry_cfg["volume_multiplier"]:
             strength += 0.2
             vol_ratio = (volume / volume_ma) * 100 if volume_ma > 0 else 0
