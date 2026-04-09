@@ -241,7 +241,7 @@ def main():
     ws_tickers = list(set(TARGET_COINS + held_coins))
 
     ws_client = UpbitWebSocketClient(
-        tickers=ws_tickers, callbacks=[manager.handle_realtime_tick]
+        tickers=ws_tickers, callbacks=[]  # [manager.handle_realtime_tick]
     )
     ws_client.start()
 
