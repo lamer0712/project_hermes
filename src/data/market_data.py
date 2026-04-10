@@ -90,64 +90,70 @@ class UpbitMarketData(BaseMarketData):
 
     @staticmethod
     def regime_detect(ticker: str, df):
-        if df is None or len(df) < 60:  # ma_60 등 긴 지표가 있으므로 최소 60개 필수
+        """
+        다중 지표를 결합하여 현재 종목의 장세를 세밀하게 판별합니다.
+        지표: EMA Slope, ADX(추세 강도), Volatility(ATR/Price), Relative Volume
+        """
+        if df is None or len(df) < 60:
             return "neutral"
             
         price = df.close.iloc[-1]
         high20 = df.high_20.iloc[-1]
+        low20 = df.low_20.iloc[-1]
 
         ma20 = df.ma_20.iloc[-1]
         ma60 = df.ma_60.iloc[-1]
-
+        
         rsi = df.rsi_14.iloc[-1]
         adx = df.adx_14.iloc[-1]
-
         atr = df.atr_14.iloc[-1]
-        volatility = atr / price
-        vol_mean = df.atr_14.rolling(50).mean().iloc[-1] / price
+        volatility = atr / (price + 1e-8)
+        
+        # 이전 50캔들 평균 변동성 대비 현재 변동성 비율
+        vol_mean = df.atr_14.rolling(50).mean().iloc[-1] / (price + 1e-8)
+        vol_ratio = volatility / (vol_mean + 1e-8)
 
         volume = df.volume.iloc[-1]
         volume_mean = df.volume.rolling(20).mean().iloc[-1]
+        rel_volume = volume / (volume_mean + 1e-8)
 
-        drop = df.close.pct_change(3).iloc[-1]
+        # 단기 가격 변화율
+        drop_3 = df.close.pct_change(3).iloc[-1]
+        rise_3 = df.close.pct_change(3).iloc[-1]
 
-        trend_strength = (ma20 - ma60) / ma60
-        ema_slope = df.ema_20.pct_change(5).iloc[-1]
+        # 이평선 이격 및 기울기
+        trend_dist = (ma20 - ma60) / (ma60 + 1e-8)
+        ema_slope = df.ma_20.pct_change(5).iloc[-1] # ma_20의 5봉 평균 기울기
 
-        # 1. Panic (event)
-        if (
-            drop < -0.05
-            and volume > volume_mean * 1.5
-            and rsi < 40
-            and ema_slope < 0
-            and trend_strength < 0
-        ):
+        # 1. Panic (급락 & 고변동성 & 투매 거래량)
+        if drop_3 < -0.04 and rel_volume > 1.5 and rsi < 35:
             return "panic"
 
-        # 🔥 1.5 Recovery (하락 → 반등 초입)
-        if (
-            ema_slope > 0
-            and price > ma20
-            and volume > volume_mean * 1.2
-            and trend_strength < 0
-        ):
-            return "recovery"
-
-        # 🔥 2. Early Breakout (강화)
-        if (
-            price >= high20
-            and volume > volume_mean * 2.0
-            and ema_slope > 0
-            and price > ma20
-        ):
+        # 2. Early Breakout (신고가 갱신 & 거래량 동반 & 양의 기울기)
+        if price >= high20 and rel_volume > 2.0 and ema_slope > 0:
             return "earlybreakout"
 
-        # 3. Strong trends (임계치 낮춰 잡아 빠른 진입 유도)
-        if trend_strength > 0.02 and adx > 22 and ema_slope > 0:
-            return "bullish"
+        # 3. Recovery (하락 후 바닥권 반등 및 단기 평단 회복)
+        if trend_dist < -0.02 and ema_slope > 0.005 and price > ma20:
+            return "recovery"
 
-        if trend_strength < -0.02 and adx > 22 and ema_slope < 0:
-            return "bearish"
+        # 4. Strong Trend (명확한 추세 진행 중)
+        if adx > 25:
+            if ema_slope > 0.002 and trend_dist > 0.01:
+                return "bullish"
+            if ema_slope < -0.002 and trend_dist < -0.01:
+                return "bearish"
+
+        # 5. Volatile Ranging (추세는 약하나 변동성이 커서 단타/역추세 유효)
+        if adx < 20 and vol_ratio > 1.2:
+            return "volatile_ranging"
+
+        # 6. Dead Market (변동성 극히 낮음 -> 매수 금지 구간)
+        if adx < 15 and vol_ratio < 0.7:
+            return "stagnant"
+
+        # 7. Neutral (기본)
+        return "neutral"
 
         # 4. Weak trends (빠르게 감지)
         if trend_strength > 0.005 and ema_slope > 0:
@@ -341,11 +347,14 @@ class UpbitMarketData(BaseMarketData):
     @classmethod
     def get_weights(cls, regime: str) -> tuple[float, float]:
         return {
-            "bullish": (0.75, 0.25),  # 추세 추종
-            "bearish": (0.35, 0.65),  # 방어 + 유동성 중심
-            "ranging": (0.45, 0.55),  # mean-reversion 대비
-            "volatile": (0.30, 0.70),  # 노이즈 → 거래대금 중요
-            "panic": (0.20, 0.80),  # 생존 모드 (유동성 최우선)
+            "bullish": (0.75, 0.25),
+            "earlybreakout": (0.90, 0.10), # 모멘텀 극대화
+            "recovery": (0.60, 0.40),
+            "bearish": (0.35, 0.65),
+            "volatile_ranging": (0.40, 0.60),
+            "ranging": (0.45, 0.55),
+            "panic": (0.20, 0.80),
+            "stagnant": (0.50, 0.50),
         }.get(regime, (0.5, 0.5))
 
     @classmethod

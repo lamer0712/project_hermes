@@ -333,10 +333,10 @@ def backtest_system(days: int = 5, update: bool = False, force_strategy: str = N
         regimes = ["recovery", "weakbullish", "bullish", "earlybreakout", "ranging", "volatile", "neutral"]
         for r in regimes:
             new_map[r] = [force_strategy]
-        manager.STRATEGY_MAP = new_map
+        manager.strategy_map = new_map
 
     # 핵심 통신·결제 모듈 Mocking
-    manager.broker = MockBroker(pm)
+    manager.broker = MockBroker(pm, agent_name=manager.name)
     manager.notifier = MockNotifier()
     manager.execution_manager.broker = manager.broker
     manager.execution_manager.notifier = manager.notifier
@@ -445,7 +445,7 @@ def backtest_system(days: int = 5, update: bool = False, force_strategy: str = N
             regime = UpbitMarketData.market_regime(setup_slice["KRW-BTC"])
 
         # 실제 사이클 수행
-        manager.execute_cycle(setup_slice, entry_slice, regime)
+        manager.execute_cycle(setup_slice, entry_slice, regime, timestamp=current_time)
 
         # 자산 가치 기록 (MDD 계산용)
         current_total = pm.get_total_value("crypto_manager")

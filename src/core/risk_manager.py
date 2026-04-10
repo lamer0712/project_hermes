@@ -18,11 +18,14 @@ class RiskManager:
         
         # 장세별 익절 목표 (Regime -> TP%)
         "regime_tp_map": {
-            "bullish": 5.0,   # 추세장: 5% 장기 보유
-            "volatile": 3.0,  # 변동성: 3% 스윙
-            "ranging": 2.0,   # 횡보장: 2% 단타 (기존)
-            "bearish": 1.5,   # 하락장: 1.5% 빠른 탈출
-            "panic": 1.0,     # 공포장: 1% 생존형 익절
+            "earlybreakout": 8.0, # 전고점 돌파 장세: 8% 이상 (대세 상승 유도)
+            "bullish": 5.0,        # 추세장: 5% 장기 보유
+            "recovery": 4.0,       # 과매도 반등: 4% 목표
+            "volatile_ranging": 2.5, # 변동성 횡보: 2.5% 스윙
+            "ranging": 2.0,        # 일반 횡보: 2% 단타
+            "bearish": 1.5,        # 하락장: 1.5% 빠른 탈출
+            "panic": 1.0,          # 공포장: 1% 생존형 익절
+            "stagnant": 1.0,       # 거래 죽은 장: 최소 익절
         }
     }
 

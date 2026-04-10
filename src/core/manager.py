@@ -1,4 +1,5 @@
 import time
+from datetime import datetime
 from src.broker.broker_api import UpbitBroker
 from src.data.market_data import UpbitMarketData
 from src.strategies.base import SignalType
@@ -25,17 +26,21 @@ class ManagerAgent:
 
     # 업비트 최소 주문 금액
     MIN_ORDER_AMOUNT = 5000
-    MAX_POSITION_RATIO = 0.45  # 0.40 -> 0.45 (챔피언 출력 상향)
-    MAX_POSITIONS = 10         # 8 -> 10 (자본 활용 유연성 극대화)
+    MAX_CAPITAL_EXPOSURE_RATIO = 0.50  # 80~90% -> 50% (사용자 요청 기반 보수적 노출 제한)
+    MAX_POSITION_RATIO = 0.25         # 한 종목당 최대 비중 (분산 투자)
+    MAX_POSITIONS = 8
 
     # 기본 전략 매핑 (최적화 데이터가 없을 경우 사용)
+    # 각 장세별로 가장 효율적인 전략군을 배치합니다.
     DEFAULT_STRATEGY_MAP = {
-        "bullish": [ "VWAPReversion"],
+        "earlybreakout": ["Breakout", "BollingerSqueeze"],
+        "bullish": ["PullbackTrend", "VWAPReversion"],
+        "recovery": ["MeanReversion", "OpeningScalp"],
+        "volatile_ranging": ["VWAPReversion", "BollingerSqueeze"],
         "ranging": ["VWAPReversion"],
-        "volatile": ["VWAPReversion"],
-        "recovery": ["VWAPReversion"],
-        "weakbullish": ["VWAPReversion"],
-        "earlybreakout": ["VWAPReversion"],
+        "panic": ["Panic", "MeanReversion"],
+        "bearish": ["Bearish"],
+        "stagnant": [], # 거래 중단
     }
     SELL_COOLDOWN_CYCLES = 8  # 손절 후 8사이클(2시간) 동안 동일 종목 재진입 금지
 
@@ -73,6 +78,7 @@ class ManagerAgent:
         setup_market_data: dict,
         entry_market_data: dict,
         market_regime: str = "ranging",
+        timestamp: datetime = None,
     ) -> None:
         """
         [싸이클 단위 실행]
@@ -80,7 +86,7 @@ class ManagerAgent:
         매수는 가장 강한 시그널의 1종목만 실행합니다.
         """
         self.notifier.start_buffering()
-        self.execution_manager.check_pending_orders()
+        self.execution_manager.check_pending_orders(timestamp=timestamp)
 
         if not setup_market_data or not entry_market_data:
             self.notifier.flush_buffer()
@@ -105,14 +111,14 @@ class ManagerAgent:
         # 1. 컨텍스트 구성
         ctx = self._build_cycle_context(entry_market_data, market_regime)
 
-        # 2. 종목별 평가 + 매도 실행 + 매수 후보 수집
-        self._evaluate_and_execute_sells(ctx, setup_market_data, entry_market_data)
-
-        # 3. 최적 매수 1건 실행
-        self._select_and_execute_buy(ctx)
+        # 1. 매도 평가 및 우선 실행
+        self._evaluate_and_execute_sells(ctx, setup_market_data, entry_market_data, timestamp=timestamp)
+        
+        # 2. 매수 실행 (최종 후보 중 1건)
+        self._select_and_execute_buy(ctx, timestamp=timestamp)
 
         # 4. 마무리 (대기주문 확인 + 리포트 + 저장)
-        self._finalize_cycle(ctx, market_regime)
+        self._finalize_cycle(ctx, market_regime, timestamp=timestamp)
         self.notifier.flush_buffer()
 
     def _update_breakout_thresholds(self, entry_market_data: dict):
@@ -189,6 +195,7 @@ class ManagerAgent:
         ticker: str,
         setup_df,
         entry_df,
+        timestamp: datetime = None,
     ) -> TickerEvaluation:
         """
         단일 종목에 대해 리스크 평가 → 전략 평가를 수행합니다.
@@ -207,7 +214,7 @@ class ManagerAgent:
                 log = f"⚡[Risk Manager]\n{risk_signal_str}"
                 logger.warning(log)
                 self.execution_manager.execute_sell(
-                    self.name, ticker, current_price, risk_signal, regime=ctx.market_regime
+                    self.name, ticker, current_price, risk_signal, regime=ctx.market_regime, timestamp=timestamp
                 )
                 # 손절인 경우 쿨다운 등록 (재진입 방지)
                 if "손절" in risk_signal.reason or "동적 손절" in risk_signal.reason:
@@ -253,6 +260,21 @@ class ManagerAgent:
                 current_price=current_price,
             )
 
+        # ── 상위 타임프레임(MTF) 추세 필터 ──
+        # 1시간봉 기준 MA 20 위에 있는 경우에만 매수 고려 (추세 역행 방지)
+        is_mtf_bullish = True
+        if not is_held:
+            try:
+                # 1시간봉 데이터 소량 조회 (캐싱되어 있을 가능성 높음)
+                df_1h = UpbitMarketData.get_ohlcv_with_indicators_new(ticker, count=30, interval="minutes/60")
+                if not df_1h.empty:
+                    ma20_1h = df_1h.ma_20.iloc[-1]
+                    price_1h = df_1h.close.iloc[-1]
+                    if price_1h < ma20_1h:
+                        is_mtf_bullish = False
+            except Exception as e:
+                logger.error(f"[MTF Filter] {ticker} 1h 데이터 조회 실패: {e}")
+
         # ── 전략 평가 (최고 confidence 선택) ──
         signal = None
         strategy = None
@@ -278,9 +300,27 @@ class ManagerAgent:
                 ctx.portfolio_info,
             )
 
-            if signal is None or signal_tmp.confidence > signal.confidence:
+            # MTF 필터 적용: 매수 시그널인데 상위 추세가 하향이면 무효화
+            if signal_tmp.type == SignalType.BUY and not is_mtf_bullish:
+                # logger.info(f"🚫 [MTF Filter] {ticker} 1시간봉 추세 하락으로 매수 차단")
+                signal_tmp = Signal(SignalType.HOLD, ticker, "MTF Trend Bearish")
+
+            if signal is None or (signal_tmp and signal_tmp.confidence > signal.confidence):
                 signal = signal_tmp
                 strategy = strategy_tmp
+
+        # ── 전략 평가 결과가 없는 경우 처리 ──
+        if signal is None or strategy is None:
+            return TickerEvaluation(
+                ticker=ticker,
+                regime=ticker_regime,
+                strategy="N/A",
+                signal_type="HOLD",
+                signal_reason="No strategy selected or evaluated",
+                signal_strength=0,
+                signal_confidence=0,
+                current_price=current_price,
+            )
 
         return TickerEvaluation(
             ticker=ticker,
@@ -300,12 +340,12 @@ class ManagerAgent:
         ctx: CycleContext,
         setup_market_data: dict,
         entry_market_data: dict,
+        timestamp: datetime = None,
     ) -> None:
         """모든 종목에 대해 평가를 수행하고, SELL 시그널은 즉시 실행, BUY는 후보에 수집합니다."""
         for ticker, entry_df in entry_market_data.items():
             setup_df = setup_market_data.get(ticker)
-
-            evaluation = self._evaluate_ticker(ctx, ticker, setup_df, entry_df)
+            evaluation = self._evaluate_ticker(ctx, ticker, setup_df, entry_df, timestamp=timestamp)
             ctx.ticker_stats[ticker] = evaluation
 
             # 리스크 매니저가 이미 처리한 경우 스킵
@@ -333,7 +373,7 @@ class ManagerAgent:
                     f" - Strategy : {evaluation.strategy}\n\t{sig_str}"
                 )
                 self.execution_manager.execute_sell(
-                    self.name, ticker, current_price, signal, regime=ctx.market_regime
+                    self.name, ticker, current_price, signal, regime=ctx.market_regime, timestamp=timestamp
                 )
 
             # BUY 시그널은 후보로 수집
@@ -358,8 +398,18 @@ class ManagerAgent:
                 strategy = self.strategy_manager.get_strategy(evaluation.strategy)
                 ctx.buy_candidates.append((signal, strategy, entry_df))
 
-    def _select_and_execute_buy(self, ctx: CycleContext) -> None:
+    def _select_and_execute_buy(self, ctx: CycleContext, timestamp: datetime = None) -> None:
         """수집된 매수 후보 중 최적 1건을 실행합니다."""
+        # 0. 계좌 전체 노출도(Exposure) 체크 (사용자 요청 리미트: 50%)
+        if ctx.portfolio_info:
+            total_value = ctx.portfolio_info.get("total_value", 0)
+            initial_capital = ctx.portfolio_info.get("initial_capital", 1)
+            exposure_ratio = (total_value - ctx.portfolio_info.get("cash", 0)) / initial_capital
+            
+            if exposure_ratio >= self.MAX_CAPITAL_EXPOSURE_RATIO:
+                logger.info(f"🛡️ [Exposure Guard] 전체 자산 노출도({exposure_ratio:.2%})가 한도({self.MAX_CAPITAL_EXPOSURE_RATIO:.2%})에 도달. 매수를 건너뜁니다.")
+                return
+
         # confidence 기준 내림차순 정렬
         ctx.buy_candidates.sort(key=lambda x: x[0].confidence, reverse=True)
 
@@ -425,11 +475,23 @@ class ManagerAgent:
                 
                 if safe_kelly > 0:
                     # 기본 시그널 강도(size_ratio)에 켈리 계수 가중치 부여 (성능 좋은 전략에 더 실어줌)
-                    original_ratio = cand_signal.size_ratio
+                    original_ratio = cand_signal.strength
                     # 켈리 배율 조정 (0.5~1.5x 범위로 보수적 가감)
                     kelly_multiplier = 0.5 + (safe_kelly / 0.2)
-                    cand_signal.size_ratio = min(original_ratio * kelly_multiplier, 1.0)
-                    logger.info(f"📊 [Kelly Sizing] {cand_strategy.name} 전략 성능 기반 비중 조절: {original_ratio:.2f} -> {cand_signal.size_ratio:.2f} (Kelly F: {kelly_f:.2f})")
+                    cand_signal.strength = min(original_ratio * kelly_multiplier, 1.0)
+                    logger.info(f"📊 [Kelly Sizing] {cand_strategy.name} 전략 성능 기반 비중 조절: {original_ratio:.2f} -> {cand_signal.strength:.2f} (Kelly F: {kelly_f:.2f})")
+
+            # 🚀 [추가] 장세 기반 수익 극대화 사이징 (Yield Sizing)
+            # 확률 높은 장세(earlybreakout)에서는 비중을 1.5배 상향
+            regime_multiplier = 1.0
+            if ctx.market_regime == "earlybreakout":
+                regime_multiplier = 1.5
+                logger.info(f"🔥 [Yield Sizing] {ctx.market_regime} 장세 감지로 비중 1.5배 상향 적용")
+            elif ctx.market_regime in ["stagnant", "bearish"]:
+                regime_multiplier = 0.3
+                logger.info(f"🛡️ [Yield Sizing] {ctx.market_regime} 장세 감지로 비중 0.3배 축소 적용")
+            
+            cand_signal.strength = min(cand_signal.strength * regime_multiplier, 1.0)
 
             sig_str = cand_signal.__str__()
             log = f" - Strategy : {cand_strategy.name}\n\t{sig_str}"
@@ -445,6 +507,7 @@ class ManagerAgent:
                 atr=atr,
                 strategy_name=cand_strategy.name,
                 regime=ctx.market_regime,
+                timestamp=timestamp,
             )
 
             if success:
@@ -452,8 +515,11 @@ class ManagerAgent:
                     f"[ManagerAgent] {ticker} 매수 접수 성공. 다음 후보 검토..."
                 )
 
-    def _finalize_cycle(self, ctx: CycleContext, market_regime: str) -> None:
-        """대기주문 확인, 리포트 전송, 포트폴리오 상태 저장을 수행합니다."""
+    def _finalize_cycle(self, ctx: CycleContext, market_regime: str, timestamp: datetime = None) -> None:
+        """싸이클 종료 전 뒷정리 (대기주문 확인, 리포트 등)"""
+        if self.execution_manager:
+            self.execution_manager.check_pending_orders(timestamp=timestamp)
+        
         # dict 변환 (기존 호환)
         ticker_stats = {t: ev.to_dict() for t, ev in ctx.ticker_stats.items()}
 

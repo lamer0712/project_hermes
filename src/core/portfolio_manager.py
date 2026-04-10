@@ -199,7 +199,8 @@ class PortfolioManager:
         paid_fee: float = 0.0,
         strategy: str = "Unknown",
         regime: str = "Unknown",
-    ) -> bool:
+        timestamp: datetime = None,
+    ) -> str:
         """
         매수 기록. 성공 시 True, 잔고 부족 시 False.
 
@@ -252,7 +253,7 @@ class PortfolioManager:
                 "tp_levels_hit": [] if is_dust else existing.get("tp_levels_hit", []),
                 "atr_14": 0 if is_dust else existing.get("atr_14", 0),
                 "strategy": strategy,
-                "created_at": existing.get("created_at", datetime.now().isoformat()),
+                "created_at": existing.get("created_at", (timestamp or datetime.now()).isoformat()),
                 "custom_sl_price": None if is_dust else existing.get("custom_sl_price", None),
                 "custom_tp_price": None if is_dust else existing.get("custom_tp_price", None),
             }
@@ -270,7 +271,7 @@ class PortfolioManager:
                 "tp_levels_hit": [],
                 "atr_14": 0,
                 "strategy": strategy,
-                "created_at": datetime.now().isoformat(),
+                "created_at": (timestamp or datetime.now()).isoformat(),
                 "custom_sl_price": None,
                 "custom_tp_price": None,
             }
@@ -302,6 +303,7 @@ class PortfolioManager:
         executed_funds: float = None,
         paid_fee: float = 0.0,
         regime: str = "Unknown",
+        timestamp: datetime = None,
     ) -> bool:
         """
         매도 기록. 성공 시 True, 보유 수량 부족 시 False.
@@ -330,11 +332,12 @@ class PortfolioManager:
         max_price = max(holdings[ticker].get("max_price", avg_price), avg_price)
         # 삭제 전에 전략명을 미리 캡처 (삭제 후에는 조회 불가)
         strategy = holdings[ticker].get("strategy", "Unknown")
-        created_at_str = holdings[ticker].get("created_at", datetime.now().isoformat())
+        created_at_str = holdings[ticker].get("created_at", (timestamp or datetime.now()).isoformat())
         
         try:
             created_at = datetime.fromisoformat(created_at_str)
-            hold_duration_min = round((datetime.now() - created_at).total_seconds() / 60, 2)
+            current_time = timestamp or datetime.now()
+            hold_duration_min = round((current_time - created_at).total_seconds() / 60, 2)
         except:
             hold_duration_min = 0
 

@@ -1,4 +1,5 @@
 import time
+from datetime import datetime
 import threading
 from typing import Optional
 from src.utils.logger import logger
@@ -22,7 +23,7 @@ class ExecutionManager:
         self.pending_orders = {}
         self._lock = threading.Lock()
 
-    def check_pending_orders(self):
+    def check_pending_orders(self, timestamp: datetime = None):
         """대기 중인 제출 주문들의 체결 상태를 확인하여 PortfolioManager에 기록합니다."""
         if not self.broker.is_configured():
             return
@@ -78,6 +79,9 @@ class ExecutionManager:
                     current_price = order_data.get("current_price", 0)
 
                     if self.portfolio_manager:
+                        # 주문 시점의 timestamp를 우선 사용, 없으면 메서드 인자 사용
+                        trade_timestamp = order_data.get("timestamp") or timestamp
+                        
                         if order_type == "buy":
                             strategy_name = order_data.get("strategy_name", "Unknown")
                             atr = order_data.get("atr", 0.0)
@@ -90,6 +94,7 @@ class ExecutionManager:
                                 paid_fee=paid_fee,
                                 strategy=strategy_name,
                                 regime=order_data.get("regime", "Unknown"),
+                                timestamp=trade_timestamp,
                             )
                             if atr > 0:
                                 self.portfolio_manager.update_holding_metadata(
@@ -130,6 +135,7 @@ class ExecutionManager:
                                 executed_funds=executed_funds,
                                 paid_fee=paid_fee,
                                 regime=order_data.get("regime", "Unknown"),
+                                timestamp=trade_timestamp,
                             )
                             if msg and isinstance(msg, str):
                                 trade_msgs.append(f"{msg}\n  └ 사유: {reason}")
@@ -158,6 +164,7 @@ class ExecutionManager:
         atr: float = 0.0,
         strategy_name: str = "Unknown",
         regime: str = "Unknown",
+        timestamp: datetime = None,
     ) -> bool:
         """비동기 매수 실행 (성공 시 True, 기각 시 False 반환)"""
         if not self.broker.is_configured():
@@ -264,13 +271,20 @@ class ExecutionManager:
                     "reason": signal.reason if hasattr(signal, "reason") else "",
                     "fixed_sl_pct": stop_loss_pct,
                     "regime": regime,
+                    "timestamp": timestamp,
                 }
                 return True
 
         return False
 
     def execute_sell(
-        self, agent_name: str, ticker: str, current_price: float, signal, regime: str = "Unknown"
+        self,
+        agent_name: str,
+        ticker: str,
+        current_price: float,
+        signal,
+        regime: str = "Unknown",
+        timestamp: datetime = None,
     ) -> None:
         """비동기 매도 실행"""
         if not self.broker.is_configured():
@@ -361,4 +375,5 @@ class ExecutionManager:
                     "volume": sell_volume,
                     "reason": signal.reason if hasattr(signal, "reason") else "",
                     "regime": regime,
+                    "timestamp": timestamp,
                 }
