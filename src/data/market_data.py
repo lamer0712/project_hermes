@@ -27,6 +27,9 @@ class UpbitMarketData(BaseMarketData):
         ]
     )
 
+    # Fear & Greed Index 캐싱 (시간, 값, 분류)
+    _fng_cache = {"timestamp": 0, "value": None, "classification": None}
+
     @staticmethod
     def calculate_adx(df, period=14):
         high = df.high
@@ -451,6 +454,46 @@ class UpbitMarketData(BaseMarketData):
         except Exception as e:
             logger.error(f"[Market Data Error] 현재가 조회 실패: {e}")
             return {}
+
+
+    @classmethod
+    def get_fear_and_greed_index(cls) -> tuple[int, str]:
+        """
+        Alternative.me API를 사용하여 암호화폐 공포-탐욕 지수를 가져옵니다.
+        1시간 동안 캐싱된 값을 사용합니다.
+        """
+        current_time = time.time()
+        if (
+            cls._fng_cache["value"] is not None
+            and (current_time - cls._fng_cache["timestamp"]) < 3600
+        ):
+            return cls._fng_cache["value"], cls._fng_cache["classification"]
+
+        url = "https://api.alternative.me/fng/?limit=1"
+        try:
+            r = requests.get(url, timeout=5)
+            r.raise_for_status()
+            data = r.json()
+            if data and "data" in data and len(data["data"]) > 0:
+                fng_data = data["data"][0]
+                value = int(fng_data["value"])
+                classification = fng_data["value_classification"]
+                
+                # 캐시 업데이트
+                cls._fng_cache = {
+                    "timestamp": current_time,
+                    "value": value,
+                    "classification": classification,
+                }
+                logger.info(f"[Market Data] Fear & Greed Index fetched: {value} ({classification})")
+                return value, classification
+        except Exception as e:
+            logger.error(f"[Market Data Error] Fear & Greed Index 조회 실패: {e}")
+            
+        # 실패 시 최근 캐시가 있으면 반환, 없으면 기본값(50, Neutral)
+        if cls._fng_cache["value"] is not None:
+            return cls._fng_cache["value"], cls._fng_cache["classification"]
+        return 50, "Neutral"
 
 
 if __name__ == "__main__":

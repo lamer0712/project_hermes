@@ -52,3 +52,7 @@ class CycleContext:
     current_prices: dict = field(default_factory=dict)
     ticker_stats: dict = field(default_factory=dict)  # ticker -> TickerEvaluation
     buy_candidates: list = field(default_factory=list)  # (signal, strategy, market_data)
+
+    # 시장 심리 지수 (신규)
+    fng_index: int = 50
+    fng_classification: str = "Neutral"

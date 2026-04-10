@@ -141,7 +141,14 @@ class ManagerAgent:
         self, entry_market_data: dict, market_regime: str
     ) -> CycleContext:
         """보유현황·현금·현재가를 수집하여 CycleContext를 구성합니다."""
+        # 시장 심리 지수 연동
+        fng_value, fng_class = UpbitMarketData.get_fear_and_greed_index()
+
+        # 기본 장세 필터 + 공포탐욕 지수 필터 (85 이상 매수 금지)
         buy_filter_passed = market_regime not in ["bearish", "panic"]
+        if fng_value >= 85:
+            buy_filter_passed = False
+            logger.warning(f"⚠️ [Extreme Greed] F&G Index {fng_value} >= 85. 신규 매수를 차단합니다.")
 
         if self.portfolio_manager:
             holdings = self.portfolio_manager.get_holdings(self.name)
@@ -178,6 +185,8 @@ class ManagerAgent:
             holdings=holdings,
             portfolio_info=portfolio_info,
             current_prices=current_prices,
+            fng_index=fng_value,
+            fng_classification=fng_class,
         )
 
     def _evaluate_ticker(
@@ -438,7 +447,7 @@ class ManagerAgent:
                 if t not in current_prices:
                     current_prices[t] = p
 
-            self._send_cycle_report(market_regime, ticker_stats, current_prices=current_prices)
+            self._send_cycle_report(ctx, ticker_stats, current_prices=current_prices)
             if self.portfolio_manager:
                 self.portfolio_manager.export_portfolio_report(
                     self.name, current_prices=current_prices
@@ -450,12 +459,14 @@ class ManagerAgent:
     # 리포트
     # ──────────────────────────────────────────────
 
-    def _send_cycle_report(self, market_regime: str, ticker_stats: dict, current_prices: dict = None) -> None:
+    def _send_cycle_report(self, ctx: CycleContext, ticker_stats: dict, current_prices: dict = None) -> None:
         """
         매 싸이클 결과 요약 리포트를 텔레그램으로 전송합니다.
         """
         if not self.portfolio_manager:
             return
+
+        market_regime = ctx.market_regime
 
         # 최신 가격 정보를 반영한 요약 정보 가져오기
         if current_prices is None:
@@ -469,7 +480,9 @@ class ManagerAgent:
 
         # 1. Market Regime & 기본 자산 정보
         msg = f"📊 *Investment Report*\n"
-        msg += f"🌐 Market Regime: {market_regime.upper()}\n"
+        msg += f"🌐 Regime: {market_regime.upper()} | 🌡️ F&G: {ctx.fng_index} ({ctx.fng_classification})\n"
+        if ctx.fng_index >= 85:
+            msg += f"⚠️ *Extreme Greed: 신규 매수 제한 중*\n"
         msg += f"💰 총 자산: {summary['total_value']:,.0f} KRW\n"
         msg += f"💵 현금 자산: {summary['cash']:,.0f} KRW ({summary['return_rate']:+.2f}%)\n\n"
 
