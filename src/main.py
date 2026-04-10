@@ -300,8 +300,12 @@ def main():
     logger.info("📱 텔레그램 명령 큐 모니터링 활성화 (2초 주기)")
     logger.info("=" * 60)
 
-    # 1. 텔레그램 리스너 백그라운드 스레드 시작
-    logger.info("🚀 텔레그램 봇 리스너 백그라운드 시작 중...")
+    # 2. API 서버 백그라운드 시작 (대시보드 지원)
+    from src.api.server import run_api_server
+    logger.info("🌐 API 서버 백그라운드 시작 중...")
+    run_api_server(manager=manager, pm=pm, agent_name=AGENT_NAME)
+
+    # 3. 텔레그램 리스너 백그라운드 스레드 시작
     telegram_thread = threading.Thread(target=run_telegram_listener, daemon=True)
     telegram_thread.start()
 
