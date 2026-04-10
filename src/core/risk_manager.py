@@ -10,7 +10,7 @@ class RiskManager:
 
     risk_params = {
         "take_profit_pct": 2.0,  # 기본 익절 앵커 (regime_tp_map에 없을 경우 사용)
-        "ratio": 1.618,       # 앵커 대비 손절 비율
+        "ratio": 1.5,       # 앵커 대비 손절 비율 (수익:손실 비중)
         "trailing_start_ratio": 0.7, 
         "trailing_stop_ratio": 0.4,
         "breakeven_ratio": 0.5,      # 본절 보호 가동 지점 비율
@@ -18,14 +18,14 @@ class RiskManager:
         
         # 장세별 익절 목표 (Regime -> TP%)
         "regime_tp_map": {
-            "earlybreakout": 8.0, # 전고점 돌파 장세: 8% 이상 (대세 상승 유도)
-            "bullish": 5.0,        # 추세장: 5% 장기 보유
-            "recovery": 4.0,       # 과매도 반등: 4% 목표
-            "volatile_ranging": 2.5, # 변동성 횡보: 2.5% 스윙
-            "ranging": 2.0,        # 일반 횡보: 2% 단타
-            "bearish": 1.5,        # 하락장: 1.5% 빠른 탈출
-            "panic": 1.0,          # 공포장: 1% 생존형 익절
-            "stagnant": 1.0,       # 거래 죽은 장: 최소 익절
+            "earlybreakout": 8.0, 
+            "bullish": 5.0,        
+            "recovery": 4.0,       
+            "volatile_ranging": 3.0, 
+            "ranging": 2.5,        
+            "bearish": 3.0,        # 하락장 반등: 3.0% (기존 1.5)
+            "panic": 2.5,          # 공포장 바닥 탈출: 2.5% (기존 1.0)
+            "stagnant": 1.0,       
         }
     }
 

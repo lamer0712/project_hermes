@@ -13,16 +13,11 @@ class BearishStrategy(BaseStrategy):
         return {
             "regime": "bearish",
             "entry": {
-                "rsi_rebound": 45,
-                "volume_multiplier": 1.2,
-                "trend_filter": 0.98,
+                "rsi_rebound": 40,        # 45 -> 40 (조금 더 일찍 포착)
+                "volume_multiplier": 1.3,
+                "trend_filter": 0.92,     # 0.98 -> 0.92 (역배열 심화 시에도 반등 노림)
             },
-            "exit": {
-                "rsi_over": 55,
-                "stop_loss": 0.97,
-                "quick_tp": 1.02,
-            },
-            "position_size_ratio": 0.2,
+            "position_size_ratio": 0.3,   # 0.2 -> 0.3 상향
         }
 
     def evaluate(
@@ -37,44 +32,31 @@ class BearishStrategy(BaseStrategy):
         price = float(entry_market_data.close.iloc[-1])
         rsi = float(entry_market_data.rsi_14.iloc[-1])
         prev_rsi = float(entry_market_data.rsi_14.iloc[-2])
-        ma9 = float(entry_market_data.ma_9.iloc[-1])
         ma20 = float(entry_market_data.ma_20.iloc[-1])
 
         vol = float(entry_market_data.volume.iloc[-1])
         vol_ma = float(entry_market_data.volume_ma20.iloc[-1])
 
-        entry_price = holdings.get(ticker, {}).get("avg_price", 0)
-
         # =========================
-        # HOLD → 빠른 탈출
+        # HOLD → 리스크 매니저에 위임
         # =========================
         if is_held:
-            if price <= entry_price * self.params["exit"]["stop_loss"]:
-                return Signal(SignalType.SELL, ticker, "[손절] 칼손절선 도달", 1.0, 1.0)
-
-            # 짧게 먹기
-            if price >= entry_price * self.params["exit"]["quick_tp"]:
-                return Signal(SignalType.SELL, ticker, "[익절] 단기반등 목표가", 0.7, 1.0)
-
-            if rsi > self.params["exit"]["rsi_over"]:
-                return Signal(SignalType.SELL, ticker, "[익절/손절] RSI 반등끝", 0.7, 1.0)
-
-            if price < ma9:
-                return Signal(SignalType.SELL, ticker, "[익절/손절] 단기안전선(MA9) 이탈", 0.8, 1.0)
-
-            return Signal(SignalType.HOLD, ticker, "홀딩 (반등 중)", 0, 0.0)
+            return Signal(SignalType.HOLD, ticker, "리스크 매니저 추적 중", 0, 0.0)
 
         # =========================
-        # ENTRY → 제한적 반등만
+        # ENTRY → 기술적 반등 포착
         # =========================
+        
+        # 1. RSI 반등
         rebound = (
             rsi > self.params["entry"]["rsi_rebound"]
             and prev_rsi <= self.params["entry"]["rsi_rebound"]
         )
 
+        # 2. 거래량 동반 확인
         volume_ok = vol > vol_ma * self.params["entry"]["volume_multiplier"]
 
-        # 핵심: 완전 하락추세는 피함
+        # 3. 추세 필터 (너무 깊은 하방은 조심하되 기회는 열어둠)
         trend_filter = price > ma20 * self.params["entry"]["trend_filter"]
 
         if rebound and volume_ok and trend_filter:
@@ -84,7 +66,7 @@ class BearishStrategy(BaseStrategy):
             return Signal(
                 SignalType.BUY,
                 ticker,
-                "단기 하락 과대 (기술적 반등)",
+                f"Bearish 반등 포착 (RSI:{rsi:.1f}, Vol:{vol/vol_ma:.1f}x)",
                 self.params["position_size_ratio"],
                 final_conf,
             )

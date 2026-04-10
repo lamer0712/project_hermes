@@ -14,12 +14,10 @@ class PanicStrategy(BaseStrategy):
             "regime": "panic",
             "entry": {
                 "rsi_rebound": 30,
+                "disparity_threshold": 0.95, # MA20 대비 5% 이상 하락했을 때만
+                "volume_multiplier": 1.5,     # 평균거래량 대비 1.5배 이상
             },
-            "exit": {
-                "profit_target": 1.01,
-                "stop_loss": 0.98,
-            },
-            "position_size_ratio": 0.1,
+            "position_size_ratio": 0.2, # 10% -> 20% 상향 (하락장 기회 포착 강화)
         }
 
     def evaluate(
@@ -34,37 +32,42 @@ class PanicStrategy(BaseStrategy):
         price = float(entry_market_data.close.iloc[-1])
         rsi = float(entry_market_data.rsi_14.iloc[-1])
         prev_rsi = float(entry_market_data.rsi_14.iloc[-2])
-
-        entry_price = holdings.get(ticker, {}).get("avg_price", 0)
+        ma20 = float(entry_market_data.ma_20.iloc[-1])
+        vol = float(entry_market_data.volume.iloc[-1])
+        vol_ma = float(entry_market_data.volume_ma20.iloc[-1])
 
         # =========================
-        # HOLD → 거의 무조건 탈출
+        # HOLD → 리스크 매니저에 위임
         # =========================
         if is_held:
-            if price <= entry_price * self.params["exit"]["stop_loss"]:
-                return Signal(SignalType.SELL, ticker, "[손절] 패닉스탑", 1.0, 1.0)
-
-            if price > entry_price * self.params["exit"]["profit_target"]:
-                return Signal(SignalType.SELL, ticker, "[익절] 기술적 반등 성공", 1.0, 1.0)
-
-            return Signal(SignalType.HOLD, ticker, "홀딩 (반등 중)", 0, 0.0)
+            return Signal(SignalType.HOLD, ticker, "리스크 매니저 추적 중", 0, 0.0)
 
         # =========================
-        # ENTRY → 극단 상황만
+        # ENTRY → 기술적 분석 강화
         # =========================
+        
+        # 1. RSI 침체 구간 탈출 (반등 시작)
         rebound = (
             rsi > self.params["entry"]["rsi_rebound"]
-            and prev_rsi < self.params["entry"]["rsi_rebound"]
+            and prev_rsi <= self.params["entry"]["rsi_rebound"]
         )
 
-        if rebound and rsi < 35:
+        # 2. 괴리율 필터 (낙폭 과대 확인)
+        disparity = price / ma20
+        is_oversold = disparity < self.params["entry"]["disparity_threshold"]
+
+        # 3. 거래량 필터 (신뢰도 확인)
+        is_volume_spike = vol > vol_ma * self.params["entry"]["volume_multiplier"]
+
+        if rebound and is_oversold and is_volume_spike:
+            # RSI가 낮을수록 더 높은 신뢰도 부여
             rsi_bonus = self.rsi_tiebreaker(rsi, mode="oversold")
-            final_conf = min(0.9 + rsi_bonus, 1.0)
+            final_conf = min(0.85 + rsi_bonus, 1.0)
 
             return Signal(
                 SignalType.BUY,
                 ticker,
-                "극단적 투매 반등 (RSI 침체)",
+                f"패닉 반등 포착 (RSI:{rsi:.1f}, 괴리율:{disparity:.2f}, 거래량:{vol/vol_ma:.1f}x)",
                 self.params["position_size_ratio"],
                 final_conf,
             )

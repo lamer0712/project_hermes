@@ -33,13 +33,13 @@ class ManagerAgent:
     # 기본 전략 매핑 (최적화 데이터가 없을 경우 사용)
     # 각 장세별로 가장 효율적인 전략군을 배치합니다.
     DEFAULT_STRATEGY_MAP = {
-        "earlybreakout": ["Breakout", "BollingerSqueeze"],
-        "bullish": ["PullbackTrend", "VWAPReversion"],
-        "recovery": ["MeanReversion", "OpeningScalp"],
-        "volatile_ranging": ["VWAPReversion", "BollingerSqueeze"],
+        "earlybreakout": ["VWAPReversion"],
+        "bullish": ["VWAPReversion"],
+        "recovery": ["VWAPReversion"],
+        "volatile_ranging": ["VWAPReversion"],
         "ranging": ["VWAPReversion"],
-        "panic": ["Panic", "MeanReversion"],
-        "bearish": ["Bearish"],
+        "panic": ["VWAPReversion"],
+        "bearish": ["VWAPReversion"],
         "stagnant": [], # 거래 중단
     }
     SELL_COOLDOWN_CYCLES = 8  # 손절 후 8사이클(2시간) 동안 동일 종목 재진입 금지
