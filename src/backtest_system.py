@@ -424,17 +424,21 @@ def backtest_system(days: int = 5, update: bool = False, force_strategy: str = N
         setup_slice = {}
         entry_slice = {}
 
+        # 검색 속도를 극대화하기 위해 numpy datetime64 타입 객체로 변환
+        current_time_np = pd.Timestamp(current_time).to_datetime64()
+
         for ticker in memo_setup:
             df_s, times_s = memo_setup[ticker]
             df_e, times_e = memo_entry[ticker]
 
-            s_mask = times_s <= current_time
-            e_mask = times_e <= current_time
+            # boolean mask 대신 searchsorted를 통한 이진 탐색 활용 (속도 극대화)
+            s_idx = times_s.searchsorted(current_time_np, side='right')
+            e_idx = times_e.searchsorted(current_time_np, side='right')
 
             # 최소 캔들 보장이 안되면 무시 (초반 지표 워밍업)
-            if s_mask.sum() > 10 and e_mask.sum() > 50:
-                setup_slice[ticker] = df_s[s_mask]
-                entry_slice[ticker] = df_e[e_mask]
+            if s_idx > 10 and e_idx > 50:
+                setup_slice[ticker] = df_s.iloc[:s_idx]
+                entry_slice[ticker] = df_e.iloc[:e_idx]
 
         if not setup_slice or not entry_slice:
             continue

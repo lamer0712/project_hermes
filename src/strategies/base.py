@@ -75,18 +75,23 @@ class BaseStrategy(ABC):
     @staticmethod
     def is_bullish_trend_htf(df):
         """상위 타임프레임(1h) 정배열 확인 (EMA 20 > 50 > 200)"""
+        import pandas as pd # NaN 체크용
+        
         if df is None or df.empty or len(df) < 5:
             return True # 데이터 없으면 필터링 안 함
 
         current = df.iloc[-1]
-        ema20 = float(current.get("ema_20", 0))
-        ema50 = float(current.get("ema_50", 0))
-        ema200 = float(current.get("ema_200", 0))
+        ema20 = current.get("ema_20", 0)
+        ema50 = current.get("ema_50", 0)
+        ema200 = current.get("ema_200", 0)
+        
+        if pd.isna(ema20) or pd.isna(ema50) or pd.isna(ema200):
+            return True
 
         if ema20 == 0 or ema50 == 0 or ema200 == 0:
             return True
 
-        return ema20 > ema50 > ema200
+        return float(ema20) > float(ema50) > float(ema200)
 
     @staticmethod
     def is_downtrend(df):

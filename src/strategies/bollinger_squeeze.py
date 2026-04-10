@@ -18,7 +18,7 @@ class BollingerSqueezeStrategy(BaseStrategy):
     def __init__(self, params: dict = None):
         default = self.get_default_params()
         if params:
-            default.update(params)
+            self.deep_update(default, params)
         super().__init__("BollingerSqueeze", default)
 
     def get_default_params(self) -> dict:

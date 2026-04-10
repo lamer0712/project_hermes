@@ -33,13 +33,13 @@ class ManagerAgent:
     # 기본 전략 매핑 (최적화 데이터가 없을 경우 사용)
     # 각 장세별로 가장 효율적인 전략군을 배치합니다.
     DEFAULT_STRATEGY_MAP = {
-        "earlybreakout": ["VWAPReversion"],
-        "bullish": ["VWAPReversion"],
-        "recovery": ["VWAPReversion"],
-        "volatile_ranging": ["VWAPReversion"],
-        "ranging": ["VWAPReversion"],
+        "earlybreakout": ["Breakout"],
+        "bullish": ["PullbackTrend", "VWAPReversion"],
+        "recovery": ["BollingerSqueeze", "MeanReversion"],
+        "volatile_ranging": ["BollingerSqueeze", "VWAPReversion"],
+        "ranging": ["VWAPReversion", "MeanReversion"],
         "panic": ["VWAPReversion"],
-        "bearish": ["VWAPReversion"],
+        "bearish": ["MeanReversion"],
         "stagnant": [], # 거래 중단
     }
     SELL_COOLDOWN_CYCLES = 8  # 손절 후 8사이클(2시간) 동안 동일 종목 재진입 금지
@@ -265,15 +265,15 @@ class ManagerAgent:
         is_mtf_bullish = True
         if not is_held:
             try:
-                # 1시간봉 데이터 소량 조회 (캐싱되어 있을 가능성 높음)
-                df_1h = UpbitMarketData.get_ohlcv_with_indicators_new(ticker, count=30, interval="minutes/60")
-                if not df_1h.empty:
-                    ma20_1h = df_1h.ma_20.iloc[-1]
-                    price_1h = df_1h.close.iloc[-1]
+                # 백테스트 모드일 경우 이미 전달받은 setup_df(60분봉) 재사용
+                df_1h = setup_df if setup_df is not None and not setup_df.empty else UpbitMarketData.get_ohlcv_with_indicators_new(ticker, count=30, interval="minutes/60")
+                if df_1h is not None and not df_1h.empty and "ma_20" in df_1h.columns:
+                    ma20_1h = float(df_1h.ma_20.iloc[-1])
+                    price_1h = float(df_1h.close.iloc[-1])
                     if price_1h < ma20_1h:
                         is_mtf_bullish = False
             except Exception as e:
-                logger.error(f"[MTF Filter] {ticker} 1h 데이터 조회 실패: {e}")
+                logger.error(f"[MTF Filter] {ticker} 1h 데이터 조회 및 필터링 실패: {e}")
 
         # ── 전략 평가 (최고 confidence 선택) ──
         signal = None
@@ -300,10 +300,11 @@ class ManagerAgent:
                 ctx.portfolio_info,
             )
 
-            # MTF 필터 적용: 매수 시그널인데 상위 추세가 하향이면 무효화
+            # MTF 필터 적용: 변동돌파/추세추종 전략 등은 상위 추세 하향시 매수 무효화
+            # 단, 낙폭과대/역추세(Reversion) 전략은 이 필터를 예외로 둡니다.
             if signal_tmp.type == SignalType.BUY and not is_mtf_bullish:
-                # logger.info(f"🚫 [MTF Filter] {ticker} 1시간봉 추세 하락으로 매수 차단")
-                signal_tmp = Signal(SignalType.HOLD, ticker, "MTF Trend Bearish")
+                if strategy_name not in ["VWAPReversion", "MeanReversion", "Bearish", "Panic"]:
+                    signal_tmp = Signal(SignalType.HOLD, ticker, "MTF Trend Bearish")
 
             if signal is None or (signal_tmp and signal_tmp.confidence > signal.confidence):
                 signal = signal_tmp

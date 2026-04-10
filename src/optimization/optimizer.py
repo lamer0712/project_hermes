@@ -20,26 +20,30 @@ class StrategyOptimizer:
         self.config_path = "data/optimized_params.json"
         self.search_space = {
             "VWAPReversion": {
-                "entry.vwap_distance_pct": [-0.005, -0.01, -0.02],
-                "entry.rsi_threshold": [35, 40, 45],
+                "entry.vwap_distance_pct": [-0.005, -0.007, -0.01],
+                "entry.rsi_threshold": [38, 42, 45],
             },
             "Breakout": {
-                "volume_multiplier": [1.8, 2.2, 2.5],
-                "breakout_period": [10, 20]
+                "entry.volume_multiplier": [1.8, 2.2, 2.5],
             },
-            # "MeanReversion": {
-            #     "setup.rsi_threshold": [35, 40, 45],
-            #     "entry.rsi_threshold": [25, 28, 32],
-            #     "entry.volume_multiplier": [1.5, 2.0]
-            # },
-            # "PullbackTrend": {
-            #     "setup.adx_threshold": [20, 25, 30],
-            #     "entry.rsi_threshold": [35, 40, 45],
-            #     "entry.volume_multiplier": [1.8, 2.2]
-            # },
+            "MeanReversion": {
+                "setup.rsi_threshold": [35, 40, 45],
+                "entry.rsi_threshold": [25, 28, 30],
+                "entry.volume_multiplier": [1.5, 1.8, 2.0]
+            },
+            "PullbackTrend": {
+                "setup.adx_threshold": [25, 28, 30],
+                "entry.rsi_threshold": [40, 45],
+            },
+            "BollingerSqueeze": {
+                "setup.bw_threshold": [0.05, 0.08],
+                "entry.volume_multiplier": [1.5, 2.0],
+            }
         }
-        # 장세 목록
+        # 장세 목록 (매수 허용: 최적화 진행)
         self.regimes = ["bullish", "weakbullish", "ranging", "volatile", "recovery", "earlybreakout"]
+        # 매수 차단 장세 (최적화 생략)
+        self.no_trade_regimes = [] #"bearish", "panic", "stagnant"]
 
     def run_full_backtest(self, config, tickers, setup_data, entry_data, timeline):
         """전체 장세 매핑과 파라미터를 사용하여 전체 백테스트를 수행합니다. (순차 실행)"""
@@ -170,9 +174,9 @@ class StrategyOptimizer:
                 best_versions[strategy_name] = self._nest_params(best_params)
                 logger.info(f"✅ [Optimizer] '{strategy_name}' 최종 선발 (Train: {best_score:.2f}, Val: {val_res['score']:.2f}, Final: {final_score:.2f})")
 
-        # 4. 장세별 챔피언 선정 (병렬 실행)
+        # 4. 매수 허용 장세별 챔피언 선정 (병렬 실행)
         logger.info("🏆 [Optimizer] 장세별 챔피언 선정 병렬 리그 시작...")
-        final_strategy_map = {}
+        final_strategy_map = {r: [] for r in self.no_trade_regimes} # 매수 금지 장세는 빈 배열 할당
         
         with ProcessPoolExecutor(max_workers=num_workers) as executor:
             league_tasks = []

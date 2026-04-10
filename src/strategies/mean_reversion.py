@@ -120,9 +120,9 @@ class MeanReversionStrategy(BaseStrategy):
         # ------------------------------
         prev_price = entry_market_data.close.iloc[-2]
 
-        # 반등 확인
-        if price <= prev_price or self.is_downtrend(entry_market_data):
-            return Signal(SignalType.HOLD, ticker, "진입대기 - 하락세", 0, 0.1)
+        # 반등 확인: 최소한 직전 캔들 대비 양봉/상승으로 돌아섰을 때만 진입 (떨어지는 칼날 보호)
+        if price <= prev_price:
+            return Signal(SignalType.HOLD, ticker, "진입대기 - 역추세 진행중 (양봉 미컨펌)", 0, 0.1)
 
         is_fake_dip, reason = self.is_fake_dip(entry_market_data)
         if is_fake_dip:

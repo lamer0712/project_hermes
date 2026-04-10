@@ -6,10 +6,7 @@ from src.strategies.base import BaseStrategy
 from src.strategies.pullback_trend import PullbackTrendStrategy
 from src.strategies.mean_reversion import MeanReversionStrategy
 from src.strategies.breakout import BreakoutStrategy
-from src.strategies.bearish import BearishStrategy
-from src.strategies.panic import PanicStrategy
 from src.strategies.vwap_reversion import VWAPReversionStrategy
-from src.strategies.opening_scalp import OpeningScalpStrategy
 from src.strategies.bollinger_squeeze import BollingerSqueezeStrategy
 import os
 
@@ -26,10 +23,7 @@ class StrategyManager:
         self.register("PullbackTrend", PullbackTrendStrategy)
         self.register("MeanReversion", MeanReversionStrategy)
         self.register("Breakout", BreakoutStrategy)
-        self.register("Bearish", BearishStrategy)
-        self.register("Panic", PanicStrategy)
         self.register("VWAPReversion", VWAPReversionStrategy)
-        self.register("OpeningScalp", OpeningScalpStrategy)
         self.register("BollingerSqueeze", BollingerSqueezeStrategy)
 
 
@@ -48,8 +42,16 @@ class StrategyManager:
             try:
                 with open(self.config_path, "r") as f:
                     config = json.load(f)
-                    self.optimized_params = config.get("strategy_params", {})
-                    self.optimized_strategy_map = config.get("strategy_map", {})
+                    
+                    # 새로운 구조 (proposed_config 내부) 지원
+                    if "proposed_config" in config:
+                        proposed = config["proposed_config"]
+                        self.optimized_params = proposed.get("strategy_params", {})
+                        self.optimized_strategy_map = proposed.get("strategy_map", {})
+                    else:
+                        self.optimized_params = config.get("strategy_params", {})
+                        self.optimized_strategy_map = config.get("strategy_map", {})
+                        
                     logger.info(f"[StrategyManager] 최적화 설정 로드 완료: {len(self.optimized_params)}건, 맵 {len(self.optimized_strategy_map)}건")
             except Exception as e:
                 logger.error(f"[StrategyManager] 설정 로드 실패: {e}")
