@@ -199,6 +199,14 @@ async def cmd_optimize(update: Update, context: ContextTypes.DEFAULT_TYPE):
     CommandQueue.push("optimize", {})
 
 
+async def cmd_strategy(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    chat_id = str(update.effective_chat.id)
+    if chat_id != AUTHORIZED_CHAT_ID:
+        return
+
+    CommandQueue.push("strategy", {})
+
+
 async def unknown_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """지정되지 않은 명령어를 처리합니다."""
     chat_id = str(update.effective_chat.id)
@@ -319,6 +327,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 /report — 전략별 수익률 리포트를 조회합니다
 /analytics — 심화 성과 분석 및 그래프 리포트를 조회합니다
 /optimize — 최근 시장 기반 전략 파라미터 및 매핑 최적화를 실행합니다
+/strategy — 현재 장세별 전략 매핑 현황을 조회합니다
 
 명령어 이외의 대화는 Manager Agent가 자연어로 답변합니다!"""
     await context.bot.send_message(chat_id=update.effective_chat.id, text=help_text)
@@ -545,6 +554,7 @@ async def post_init(application):
         BotCommand("report", "전략별 수익률 보고서 조회"),
         BotCommand("analytics", "심화 성과 분석 및 그래프 조회"),
         BotCommand("optimize", "전략 파라미터 및 매핑 최적화 실행"),
+        BotCommand("strategy", "현재 장세별 전략 매핑 현황 조회"),
         BotCommand("eval", "특정 코인 전략 분석 조회"),
         BotCommand("liquidate", "특정 코인 시장가 청산"),
         BotCommand("sync", "업비트 계좌 동기화"),
@@ -581,6 +591,7 @@ def run_telegram_listener():
     application.add_handler(CommandHandler("report", cmd_report))
     application.add_handler(CommandHandler("analytics", cmd_analytics))
     application.add_handler(CommandHandler("optimize", cmd_optimize))
+    application.add_handler(CommandHandler("strategy", cmd_strategy))
 
     application.add_handler(MessageHandler(filters.COMMAND, unknown_command))
     application.add_handler(CallbackQueryHandler(handle_callback_query))

@@ -42,6 +42,7 @@ class CommandQueueHandler:
             "analytics": self._handle_analytics,
             "optimize": self._handle_optimize,
             "apply_optimize": self._handle_apply_optimize,
+            "strategy": self._handle_strategy,
         }
 
     def process(self):
@@ -539,3 +540,29 @@ class CommandQueueHandler:
         except Exception as e:
             logger.error(f"[CommandHandler] 최적화 반영 중 오류: {e}")
             self.notifier.send_message(f"❌ *최적화 반영 중 오류 발생:* {str(e)}")
+
+
+    def _handle_strategy(self, params):
+        """현재 장세별 전략 매핑 현황을 전송합니다."""
+        try:
+            strategy_map = self.manager.strategy_map
+            
+            msg = "🎯 **현재 장세별 전략 매핑 현황**\n"
+            msg += "최근 최적화된 설정이 적용되어 있습니다.\n\n"
+            
+            for regime, strats in strategy_map.items():
+                strats_text = ", ".join(strats) if strats else "매수 안함 (Skip)"
+                msg += f"• **{regime:12}** : {strats_text}\n"
+            
+            # 현재 적용된 상세 파라미터도 요약해서 보여주면 좋을 것 같음
+            opt_params = self.manager.strategy_manager.optimized_params
+            if opt_params:
+                msg += "\n⚙️ **전략별 최적 파라미터**\n"
+                for s_name, p_set in opt_params.items():
+                    msg += f"• `{s_name}`: {p_set}\n"
+            
+            self.notifier.send_message(msg)
+            
+        except Exception as e:
+            logger.error(f"[CommandHandler] Strategy 조회 중 오류: {e}")
+            self.notifier.send_message(f"❌ 전략 매핑 조회 실패: {e}")
