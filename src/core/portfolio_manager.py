@@ -59,6 +59,7 @@ class PortfolioManager:
                             "sell_count": pb.get(
                                 "sell_count", pb.get("total_trades", 0) // 2
                             ),
+                            "strategy_stats": pb.get("strategy_stats", {}),
                         }
                     else:
                         self.portfolios[agent_name]["cash"] = pb["available_cash"]
@@ -89,6 +90,7 @@ class PortfolioManager:
                             "max_drawdown",
                             self.portfolios[agent_name].get("max_drawdown", 0),
                         )
+                        self.portfolios[agent_name]["strategy_stats"] = pb.get("strategy_stats", {})
                         self.portfolios[agent_name]["is_halted"] = pb["is_halted"]
 
                     # Convert DB holdings (volume, avg_price, max_price, sl_levels_hit)
@@ -131,6 +133,7 @@ class PortfolioManager:
                         "total_gross_loss": p.get("total_gross_loss", 0),
                         "peak_value": p.get("peak_value", 0),
                         "max_drawdown": p.get("max_drawdown", 0),
+                        "strategy_stats": p.get("strategy_stats", {}),
                         "is_halted": p["is_halted"],
                     },
                 )
@@ -360,6 +363,25 @@ class PortfolioManager:
                 profit
             )
 
+        # 전략별 통계 업데이트
+        if strategy and strategy != "Unknown":
+            stats = portfolio.get("strategy_stats", {})
+            if strategy not in stats:
+                stats[strategy] = {
+                    "total_trades": 0,
+                    "winning_trades": 0,
+                    "total_gross_profit": 0.0,
+                    "total_gross_loss": 0.0
+                }
+            s_stats = stats[strategy]
+            s_stats["total_trades"] += 1
+            if profit > 0:
+                s_stats["winning_trades"] += 1
+                s_stats["total_gross_profit"] += profit
+            else:
+                s_stats["total_gross_loss"] += abs(profit)
+            portfolio["strategy_stats"] = stats
+
         self.save_state()
         self.db.record_trade(
             agent_name,
@@ -375,9 +397,17 @@ class PortfolioManager:
             hold_duration_min=hold_duration_min,
         )
         self.export_portfolio_report(agent_name)
+        portfolio_impact = (profit / portfolio["initial_capital"]) * 100
         profit_emoji = "⏫" if profit > 0 else "⏬"
-        msg = f"{profit_emoji} 매도: {ticker} 거래수량: {volume:.3f}, 단가: {price:,.1f}, 거래금액: {sell_revenue_gross:,.0f}, 수수료: {paid_fee:,.2f}, 정산금액: {sell_revenue_net:,.0f}, 손익: {profit:+,.0f}({profit_ratio:+.2f}%), 평단가: {avg_price:,.1f}, 고가: {max_price:,.1f}"
-        logger.info(msg)
+        msg = (
+            f"{profit_emoji} **매도 완료: {ticker}**\n"
+            f"  • 실현 손익: {profit:+,.0f} KRW\n"
+            f"  • **수익률 (매매): {profit_ratio:+.2f}%**\n"
+            f"  • **수익률 (계좌): {portfolio_impact:+.2f}%**\n"
+            f"  • 거래금액: {sell_revenue_net:,.0f} (수수료 {paid_fee:,.0f} 포함)\n"
+            f"  • 보유기간: {hold_duration_min}분"
+        )
+        logger.info(msg.replace("**", "")) # 로그에서는 마크다운 제거
         return msg
 
     def set_halt(self, agent_name: str, status: bool) -> bool:
@@ -624,6 +654,29 @@ class PortfolioManager:
             "risk_reward_ratio": rr_ratio,
             "max_drawdown": portfolio.get("max_drawdown", 0),
             "peak_value": portfolio.get("peak_value", 0),
+            "strategy_stats": portfolio.get("strategy_stats", {}),
+        }
+
+    def get_strategy_performance(self, agent_name: str, strategy: str) -> dict:
+        """특정 전략의 승률 및 손익비를 반환합니다."""
+        if agent_name not in self.portfolios:
+            return {}
+        
+        stats = self.portfolios[agent_name].get("strategy_stats", {}).get(strategy)
+        if not stats or stats["total_trades"] == 0:
+            return {"win_rate": 0.5, "rr_ratio": 1.0, "total_trades": 0} # 기본값 (보수적)
+
+        win_rate = stats["winning_trades"] / stats["total_trades"]
+        
+        avg_profit = stats["total_gross_profit"] / stats["winning_trades"] if stats["winning_trades"] > 0 else 0
+        losing_trades = stats["total_trades"] - stats["winning_trades"]
+        avg_loss = stats["total_gross_loss"] / losing_trades if losing_trades > 0 else 0
+        rr_ratio = avg_profit / avg_loss if avg_loss > 0 else 1.0
+
+        return {
+            "win_rate": win_rate,
+            "rr_ratio": rr_ratio,
+            "total_trades": stats["total_trades"]
         }
 
     def export_portfolio_report(self, agent_name: str, current_prices: dict = None):

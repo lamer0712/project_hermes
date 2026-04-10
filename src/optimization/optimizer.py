@@ -10,99 +10,9 @@ from src.core.portfolio_manager import PortfolioManager
 from src.strategies.strategy_manager import StrategyManager
 from src.data.market_data import UpbitMarketData
 from src.utils.logger import logger
+from src.optimization.genetic_optimizer import GeneticOptimizer
 
-def _run_backtest_worker(args):
-    """지정된 파라미터로 백테스트를 수행하는 독립 워커 함수 (병렬화용)"""
-    (strategy_name, params, tickers, setup_data, entry_data, timeline, target_regime, regimes) = args
-    
-    # 순환 참조 방지를 위해 함수 내에서 필요한 클래스 임포트
-    from src.core.portfolio_manager import PortfolioManager
-    from src.core.manager import ManagerAgent
-    from src.backtest_system import MockBroker, MockNotifier
-    from src.data.market_data import UpbitMarketData
-    import os
-    import pandas as pd
-
-    temp_db = f"data/opt_{strategy_name}_{os.getpid()}_{hash(str(params)) % 1000}.db"
-    pm = PortfolioManager(total_capital=1000000, db_path=temp_db)
-    pm.allocate("opt_agent", 1000000)
-    
-    manager = ManagerAgent("opt_agent", pm)
-    manager.broker = MockBroker(pm, agent_name="opt_agent")
-    manager.notifier = MockNotifier()
-    manager.execution_manager.broker = manager.broker
-    manager.execution_manager.notifier = manager.notifier
-    
-    if target_regime:
-        manager.strategy_map = {target_regime: [strategy_name]}
-    else:
-        manager.strategy_map = {r: [strategy_name] for r in regimes}
-        
-    # Nested 파라미터 변환 (StrategyOptimizer 메서드를 호출할 수 없으므로 직접 구현)
-    nested_params = {}
-    for k, v in params.items():
-        if "." in k:
-            p, c = k.split(".")
-            if p not in nested_params: nested_params[p] = {}
-            nested_params[p][c] = v
-        else:
-            nested_params[k] = v
-    manager.strategy_manager.optimized_params = {strategy_name: nested_params}
-
-    # 성능 최적화: 딕서너리 조회 최소화를 위해 각 티커별 데이터프레임을 리스트로 변환하고 인덱스 추적
-    # 슬라이싱 성능을 극대화하기 위해 미리 필터링된 인덱스를 사용
-    value_history = []
-    
-    # 타임라인 루프 실행
-    for current_time in timeline:
-        # 1. BTC 데이터(장세 판단용) 슬라이싱 (성능을 위해 인덱스 캐싱 가능하나 기본 필터링 복구)
-        btc_setup_full = setup_data.get("KRW-BTC")
-        if btc_setup_full is None: continue
-        
-        btc_setup_slice = btc_setup_full[btc_setup_full["time"] <= current_time]
-        if btc_setup_slice.empty or len(btc_setup_slice) < 60: 
-            continue
-            
-        regime = UpbitMarketData.market_regime(btc_setup_slice)
-        if target_regime and regime != target_regime:
-            continue
-            
-        # 2. 전체 티커 데이터 슬라이싱 (빈 데이터프레임 방지 필터링 복구)
-        setup_slice = {t: df[df["time"] <= current_time] for t, df in setup_data.items() 
-                       if not df[df["time"] <= current_time].empty}
-        entry_slice = {t: df[df["time"] <= current_time] for t, df in entry_data.items() 
-                       if not df[df["time"] <= current_time].empty}
-        
-        if not entry_slice: continue # 한 종목도 데이터가 없으면 스킵
-        
-        manager.execute_cycle(setup_slice, entry_slice, regime)
-        value_history.append(pm.get_total_value("opt_agent"))
-
-    summary = pm.get_portfolio_summary("opt_agent")
-    roi = summary.get("return_rate", 0)
-    pf = summary.get("profit_factor", 0)
-    
-    mdd = 0
-    if value_history:
-        df_vals = pd.Series(value_history)
-        mdd = ((df_vals - df_vals.cummax()) / df_vals.cummax()).min() * 100
-
-    score = (roi * 0.6) + (min(pf, 5) * 10) - (abs(mdd) * 0.5)
-    
-    if os.path.exists(temp_db): 
-        try: os.remove(temp_db)
-        except: pass
-    
-    return {
-        "score": score,
-        "roi": roi,
-        "pf": pf,
-        "mdd": mdd,
-        "total_trades": summary.get("total_trades", 0),
-        "params": params,
-        "strategy_name": strategy_name,
-        "target_regime": target_regime
-    }
+from src.optimization.backtest_worker import _run_backtest_worker
 
 class StrategyOptimizer:
     def __init__(self, days=7):
@@ -175,6 +85,13 @@ class StrategyOptimizer:
             "total_trades": summary.get("total_trades", 0)
         }
 
+    def _split_data_walk_forward(self, timeline: list, train_ratio: float = 0.7):
+        """데이터를 상호 배타적인 학습/검증 구간으로 분할합니다."""
+        split_idx = int(len(timeline) * train_ratio)
+        train_timeline = timeline[:split_idx]
+        val_timeline = timeline[split_idx:]
+        return train_timeline, val_timeline
+
     def optimize(self, current_manager=None):
         logger.info(f"🚀 [Optimizer] {self.days}일 데이터기반 병렬 광역 최적화 시작...")
         
@@ -213,26 +130,45 @@ class StrategyOptimizer:
         
         with ProcessPoolExecutor(max_workers=num_workers) as executor:
             for strategy_name, grid in self.search_space.items():
-                logger.info(f"🔍 [Optimizer] '{strategy_name}' 병렬 파라미터 탐색 중 (Workers: {num_workers})...")
                 combinations = self._generate_grid(grid)
                 
-                # 병렬 태스크 구성
-                tasks = [
-                    (strategy_name, combo, tickers, setup_data, entry_data, timeline, None, self.regimes)
-                    for combo in combinations
-                ]
+                # 🚀 [추가] 데이터 분할 (Walk-forward 준비)
+                train_timeline, val_timeline = self._split_data_walk_forward(timeline)
                 
-                best_res = None
-                max_score = -9999
+                # 파라미터 공간이 크면 유전 알고리즘 사용, 작으면 그리드 서치
+                if len(combinations) > 50:
+                    logger.info(f"🧬 [Optimizer] '{strategy_name}' 공간이 큼({len(combinations)}). 유전 알고리즘 모드 가동...")
+                    ga = GeneticOptimizer(grid, pop_size=max(10, min(30, len(combinations)//2)), generations=4)
+                    best_ind = ga.evolve(strategy_name, tickers, setup_data, entry_data, train_timeline, None, self.regimes)
+                    best_params = best_ind.params
+                    best_score = best_ind.fitness
+                else:
+                    logger.info(f"🔍 [Optimizer] '{strategy_name}' 병렬 파라미터 그리드 탐색 중...")
+                    tasks = [(strategy_name, combo, tickers, setup_data, entry_data, train_timeline, None, self.regimes)
+                             for combo in combinations]
+                    
+                    best_res = None
+                    max_score = -9999
+                    for res in executor.map(_run_backtest_worker, tasks):
+                        if res["score"] > max_score and res["total_trades"] > 0:
+                            max_score = res["score"]
+                            best_res = res
+                    
+                    if best_res:
+                        best_params = best_res["params"]
+                        best_score = max_score
+                    else:
+                        continue
+
+                # 🚀 [추가] 검증 단계 (Validation / Forward Test)
+                logger.info(f"🧪 [Optimizer] '{strategy_name}' 검증 구간(Forward) 테스트 중...")
+                val_res = _run_backtest_worker((strategy_name, best_params, tickers, setup_data, entry_data, val_timeline, None, self.regimes))
                 
-                for res in executor.map(_run_backtest_worker, tasks):
-                    if res["score"] > max_score and res["total_trades"] > 0:
-                        max_score = res["score"]
-                        best_res = res
+                # 최종 선발: 학습과 검증 점수의 가중 합산 (강건성 확보)
+                final_score = (best_score * 0.4) + (val_res["score"] * 0.6)
                 
-                if best_res:
-                    best_versions[strategy_name] = self._nest_params(best_res["params"])
-                    logger.info(f"✅ [Optimizer] '{strategy_name}' 최적 파라미터 확보 (Score: {best_res['score']:.2f})")
+                best_versions[strategy_name] = self._nest_params(best_params)
+                logger.info(f"✅ [Optimizer] '{strategy_name}' 최종 선발 (Train: {best_score:.2f}, Val: {val_res['score']:.2f}, Final: {final_score:.2f})")
 
         # 4. 장세별 챔피언 선정 (병렬 실행)
         logger.info("🏆 [Optimizer] 장세별 챔피언 선정 병렬 리그 시작...")

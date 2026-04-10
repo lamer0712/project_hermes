@@ -489,6 +489,43 @@ class UpbitMarketData(BaseMarketData):
         return 50, "Neutral"
 
 
+    @classmethod
+    def get_correlation_matrix(cls, tickers: list[str], count: int = 100, interval: str = "minutes/60") -> pd.DataFrame:
+        """
+        주어진 종목들 간의 종가 기반 상관관계 행렬을 산출합니다.
+        """
+        if not tickers:
+            return pd.DataFrame()
+
+        logger.info(f"[Market Data] {len(tickers)}개 종목 간 상관관계 분석 시작 ({interval}, {count}캔들)...")
+        
+        # 병렬로 데이터 수집
+        all_data = cls.get_multiple_ohlcv_with_indicators(tickers, count=count, interval=interval)
+        
+        # 데이터 정렬 및 종가 추출
+        close_series = {}
+        for ticker, df in all_data.items():
+            if df is not None and not df.empty:
+                # 시간을 인덱스로 설정하여 정렬 용이하게 함
+                df_indexed = df.set_index("time")
+                close_series[ticker] = df_indexed["close"]
+
+        if not close_series:
+            return pd.DataFrame()
+
+        # 데이터프레임으로 통합 (자동으로 시간 인덱스 기준 join)
+        combined_df = pd.DataFrame(close_series)
+        
+        # 결측치가 너무 많은 데이터 제거 (데이터 품질 보장)
+        combined_df = combined_df.dropna(thresh=int(len(combined_df) * 0.7), axis=1)
+        
+        # 상관관계 행렬 계산
+        corr_matrix = combined_df.corr()
+        
+        logger.info(f"[Market Data] 상관관계 분석 완료. (행렬 크기: {corr_matrix.shape})")
+        return corr_matrix
+
+
 if __name__ == "__main__":
     # 테스트 로직
     logger.info("Testing dynamic coin selection...")

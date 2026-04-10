@@ -385,6 +385,18 @@ class ManagerAgent:
             if ticker in self.sell_cooldowns and self.sell_cooldowns[ticker] > 0:
                 continue
 
+            # 🚀 [추가] 상관관계 기반 분산 투자 로직
+            holdings = self.portfolio_manager.get_holdings(self.name)
+            if holdings:
+                held_tickers = list(holdings.keys())
+                corr_matrix = UpbitMarketData.get_correlation_matrix([ticker] + held_tickers, count=50)
+                if not corr_matrix.empty and ticker in corr_matrix.columns:
+                    correlations = corr_matrix[ticker].drop(ticker)
+                    max_corr = correlations.max()
+                    if max_corr > 0.8:
+                        logger.info(f"⚠️ [Diversification] {ticker}는 기존 보유 종목과 상관관계가 너무 높음 (Max Corr: {max_corr:.2f}). 스킵합니다.")
+                        continue
+
             current_price = float(cand_market_data.close.iloc[-1])
             available_cash = self.portfolio_manager.get_available_cash(self.name)
 
@@ -399,6 +411,25 @@ class ManagerAgent:
                 if "atr_14" in cand_market_data
                 else 0.0
             )
+
+            # 🚀 [추가] 켈리 공식 기반 동적 포지션 사이징
+            perf = self.portfolio_manager.get_strategy_performance(self.name, cand_strategy.name)
+            if perf and perf.get("total_trades", 0) >= 5: # 최소 5회 이상 거래 데이터 필요
+                p = perf["win_rate"]
+                b = perf["rr_ratio"]
+                # 켈리 공식: f = (p * (b + 1) - 1) / b
+                kelly_f = (p * (b + 1) - 1) / b if b > 0 else 0
+                
+                # Fractional Kelly (0.5) 적용 및 최대 한도(0.2) 제한으로 안전성 확보
+                safe_kelly = max(0, min(kelly_f * 0.5, 0.2))
+                
+                if safe_kelly > 0:
+                    # 기본 시그널 강도(size_ratio)에 켈리 계수 가중치 부여 (성능 좋은 전략에 더 실어줌)
+                    original_ratio = cand_signal.size_ratio
+                    # 켈리 배율 조정 (0.5~1.5x 범위로 보수적 가감)
+                    kelly_multiplier = 0.5 + (safe_kelly / 0.2)
+                    cand_signal.size_ratio = min(original_ratio * kelly_multiplier, 1.0)
+                    logger.info(f"📊 [Kelly Sizing] {cand_strategy.name} 전략 성능 기반 비중 조절: {original_ratio:.2f} -> {cand_signal.size_ratio:.2f} (Kelly F: {kelly_f:.2f})")
 
             sig_str = cand_signal.__str__()
             log = f" - Strategy : {cand_strategy.name}\n\t{sig_str}"

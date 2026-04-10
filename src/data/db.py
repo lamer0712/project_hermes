@@ -65,6 +65,8 @@ class DatabaseManager:
                 cursor.execute('ALTER TABLE portfolios ADD COLUMN peak_value REAL DEFAULT 0')
             if 'max_drawdown' not in columns:
                 cursor.execute('ALTER TABLE portfolios ADD COLUMN max_drawdown REAL DEFAULT 0')
+            if 'strategy_stats' not in columns:
+                cursor.execute('ALTER TABLE portfolios ADD COLUMN strategy_stats TEXT DEFAULT "{}"')
             
             # 포트폴리오별 보유 종목 상세 내역
             cursor.execute('''
@@ -133,8 +135,8 @@ class DatabaseManager:
         with self.get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute('''
-                INSERT INTO portfolios (agent_name, allocated_capital, available_cash, total_trades, winning_trades, total_gross_profit, total_gross_loss, peak_value, max_drawdown, is_halted, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                INSERT INTO portfolios (agent_name, allocated_capital, available_cash, total_trades, winning_trades, total_gross_profit, total_gross_loss, peak_value, max_drawdown, is_halted, strategy_stats, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
                 ON CONFLICT(agent_name) DO UPDATE SET
                     allocated_capital=excluded.allocated_capital,
                     available_cash=excluded.available_cash,
@@ -145,6 +147,7 @@ class DatabaseManager:
                     peak_value=excluded.peak_value,
                     max_drawdown=excluded.max_drawdown,
                     is_halted=excluded.is_halted,
+                    strategy_stats=excluded.strategy_stats,
                     updated_at=CURRENT_TIMESTAMP
             ''', (
                 agent_name,
@@ -156,7 +159,8 @@ class DatabaseManager:
                 data.get("total_gross_loss", 0),
                 data.get("peak_value", 0),
                 data.get("max_drawdown", 0),
-                1 if data.get("is_halted", False) else 0
+                1 if data.get("is_halted", False) else 0,
+                json.dumps(data.get("strategy_stats", {}))
             ))
 
     def save_holdings(self, agent_name: str, holdings: dict):
@@ -224,6 +228,7 @@ class DatabaseManager:
                     "peak_value": row['peak_value'] if 'peak_value' in row.keys() else 0,
                     "max_drawdown": row['max_drawdown'] if 'max_drawdown' in row.keys() else 0,
                     "is_halted": bool(row['is_halted']),
+                    "strategy_stats": json.loads(row['strategy_stats']) if 'strategy_stats' in row.keys() and row['strategy_stats'] else {},
                     "holdings": {}
                 }
             
