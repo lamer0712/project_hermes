@@ -56,19 +56,22 @@ reconfigure_logger_for_backtest()
 class MockBroker:
     """명령을 서버로 보내지 않고 가상으로 성공 체결을 에뮬레이션하는 브로커"""
 
-    def __init__(self, pm=None):
+    def __init__(self, pm=None, agent_name="full_test"):
         self.pending_orders = {}
         self.uuid_counter = 1
         self.pm = pm
+        self.agent_name = agent_name
+        self.is_mock = True
 
     def is_configured(self):
         return True
 
     def get_balances(self):
-        # ManagerAgent 초기화가 실패하지 않도록 더미 잔고 제공
+        # 더미 KRW 잔고 제공
         balances = [{"currency": "KRW", "balance": "10000000", "avg_buy_price": "0"}]
         if self.pm:
-            holdings = self.pm.get_holdings("crypto_manager")
+            # 하드코딩된 'crypto_manager' 대신 초기화 시 받은 agent_name 사용
+            holdings = self.pm.get_holdings(self.agent_name)
             for ticker, data in holdings.items():
                 cur = ticker.split("-")[1] if "-" in ticker else ticker
                 balances.append(
@@ -102,12 +105,15 @@ class MockBroker:
             executed_vol = float(volume)
             executed_funds = executed_vol * current_price
 
+        fee_rate = 0.0005  # 0.05% 업비트 표준 수수료 반영
+        paid_fee = executed_funds * fee_rate
+
         self.pending_orders[uuid] = {
             "uuid": uuid,
             "state": "done",
             "executed_volume": str(executed_vol),
             "trades": [{"funds": str(executed_funds)}],
-            "paid_fee": "0",
+            "paid_fee": str(paid_fee),
         }
         return {"uuid": uuid}
 
@@ -433,26 +439,10 @@ def backtest_system(days: int = 5, update: bool = False, force_strategy: str = N
         if not setup_slice or not entry_slice:
             continue
 
-        # 자체 Regime 판독 엔진 모방 (KRW-BTC의 setup_slice 기준)
+        # UpbitMarketData의 공통 Regime 판독 엔진 사용 (지속적인 로직 동기화 보장)
         regime = "ranging"
         if "KRW-BTC" in setup_slice:
-            btc_setup = setup_slice["KRW-BTC"]
-            if len(btc_setup) >= 2:
-                price = btc_setup.close.iloc[-1]
-                prev_price = btc_setup.close.iloc[-2]
-                atr = btc_setup.atr_14.iloc[-1]
-                change = (price - prev_price) / prev_price
-                volatility = atr / price
-                adx = btc_setup.adx_14.iloc[-1]
-                ema20 = btc_setup.ma_20.iloc[-1]
-                ema50 = btc_setup.ma_50.iloc[-1]
-
-                if change < -0.04:
-                    regime = "panic"
-                elif volatility > 0.035:
-                    regime = "volatile"
-                elif adx > 25:
-                    regime = "bullish" if ema20 > ema50 else "bearish"
+            regime = UpbitMarketData.market_regime(setup_slice["KRW-BTC"])
 
         # 실제 사이클 수행
         manager.execute_cycle(setup_slice, entry_slice, regime)

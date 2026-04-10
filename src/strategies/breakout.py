@@ -17,7 +17,7 @@ class BreakoutStrategy(BaseStrategy):
         default = self.get_default_params()
 
         if params:
-            default.update(params)
+            self.deep_update(default, params)
 
         super().__init__("Breakout", default)
 

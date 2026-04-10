@@ -9,6 +9,7 @@ from src.broker.broker_api import UpbitBroker
 from src.data.strategy_report import generate_report
 from src.core.analytics import TradeAnalytics
 from src.utils.visualizer import Visualizer
+from src.optimization.optimizer import StrategyOptimizer
 from src.utils.logger import logger
 
 
@@ -37,9 +38,10 @@ class CommandQueueHandler:
             "halt": self._handle_halt,
             "resume": self._handle_resume,
             "clear": self._handle_clear,
-            "eval": self._handle_eval,
             "report": self._handle_report,
             "analytics": self._handle_analytics,
+            "optimize": self._handle_optimize,
+            "apply_optimize": self._handle_apply_optimize,
         }
 
     def process(self):
@@ -297,6 +299,7 @@ class CommandQueueHandler:
                 msg += "🛑 *거래 중지됨 (Halted)*\n"
             elif total_trades > 10 and (win_rate < 20.0 or return_rate < -15.0):
                 msg += "🛑 *매수 차단됨 (Kill Switch 발동)*\n"
+            self.notifier.send_message(f"❌ *최적화 중 오류 발생:* {str(e)}")
 
             msg += "\n"
             msg += f"현금: {s['cash']:,.0f} KRW\n"
@@ -448,3 +451,91 @@ class CommandQueueHandler:
                     except Exception:
                         pass
             return f"❌ 지정가 매도 주문 실패: {ticker}\n{error_msg}"
+
+    def _handle_optimize(self, params):
+        """전략 파라미터 및 매핑 최적화를 수행하고 승인을 요청합니다."""
+        agent_name = params.get("agent_name", "crypto_manager")
+        self.notifier.send_message(f"🧬 *[{agent_name}] 전략 최적화 및 성과 비교 시작...* (수 분 소요)")
+        
+        try:
+            # 1. 최적화 실행 (최근 7일 데이터 기반, 베이스라인 비교 포함)
+            optimizer = StrategyOptimizer(days=7)
+            comparison = optimizer.optimize(current_manager=self.manager)
+            
+            if not comparison:
+                self.notifier.send_message(f"⚠️ *[{agent_name}] 최적화 실패 (데이터 부족 등)*")
+                return
+
+            base = comparison["baseline"]
+            opt = comparison["optimized"]
+            
+            # 2. 메시지 구성 (성과 비교)
+            msg = f"📊 *전략 최적화 성과 비교 ({self.manager.name})*\n"
+            msg += f"`데이터 기간: 최근 7일` \n\n"
+            msg += f"| 항목 | 현재 (Before) | 제안 (After) |\n"
+            msg += f"| :--- | :---: | :---: |\n"
+            msg += f"| **ROI** | {base['roi']:+.2f}% | **{opt['roi']:+.2f}%** |\n"
+            msg += f"| **PF** | {base['pf']:.2f} | **{opt['pf']:.2f}** |\n"
+            msg += f"| **MDD** | {base['mdd']:.2f}% | **{opt['mdd']:.2f}%** |\n"
+            msg += f"| **Trades** | {base['total_trades']}회 | {opt['total_trades']}회 |\n\n"
+            
+            # 1. 주요 파라미터 변경 사항 요약
+            msg += "⚙️ *제안된 파라미터 설정*\n"
+            proposed = comparison["proposed_config"]["strategy_params"]
+            for s_name, p_set in proposed.items():
+                msg += f"• `{s_name}`: {p_set}\n"
+            
+            msg += "\n🏆 *장세별 최적 전략(Champion) 매핑*\n"
+            s_map = comparison["proposed_config"]["strategy_map"]
+            for regime, strats in s_map.items():
+                msg += f"• `{regime:12}`: {', '.join(strats)}\n"
+            
+            self.notifier.send_message(msg)
+            
+            # 3. 승인 버튼 추가
+            keyboard = {
+                "inline_keyboard": [[
+                    {"text": "✅ 최적화 적용", "callback_data": "confirm_opt"},
+                    {"text": "❌ 취소", "callback_data": "cancel_opt"}
+                ]]
+            }
+            self.notifier.send_message("위 성과를 검토하고 적용 여부를 선택해주세요.", reply_markup=keyboard)
+            
+        except Exception as e:
+            traceback.print_exc()
+            logger.error(f"[CommandHandler] 최적화 중 오류: {e}")
+            self.notifier.send_message(f"❌ *최적화 중 오류 발생:* {str(e)}")
+
+    def _handle_apply_optimize(self, params):
+        """임시 저장된 최적화 결과를 정식 반영합니다."""
+        agent_name = params.get("agent_name", "crypto_manager")
+        pending_path = "data/pending_optimized_params.json"
+        target_path = "data/optimized_params.json"
+        
+        if not os.path.exists(pending_path):
+            self.notifier.send_message(f"⚠️ *[{agent_name}] 적용할 대기 중인 최적화 결과가 없습니다.*")
+            return
+            
+        try:
+            with open(pending_path, "r") as f:
+                data = json.load(f)
+                proposed_config = data["proposed_config"]
+                
+            # 정식 파일로 저장
+            with open(target_path, "w") as f:
+                json.dump(proposed_config, f, indent=4)
+                
+            # 매니저 객체 핫스왑
+            self.manager.strategy_manager.load_optimized_config()
+            self.manager.strategy_map = self.manager.strategy_manager.optimized_strategy_map or self.manager.DEFAULT_STRATEGY_MAP
+            
+            # 임시 파일 삭제
+            if os.path.exists(pending_path):
+                os.remove(pending_path)
+            
+            self.notifier.send_message(f"✅ *[{agent_name}] 최적화 설정이 성공적으로 반영되었습니다!*")
+            logger.info(f"[CommandHandler] Optimized config applied to {agent_name}")
+            
+        except Exception as e:
+            logger.error(f"[CommandHandler] 최적화 반영 중 오류: {e}")
+            self.notifier.send_message(f"❌ *최적화 반영 중 오류 발생:* {str(e)}")

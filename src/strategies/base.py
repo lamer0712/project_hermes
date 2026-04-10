@@ -189,4 +189,14 @@ class BaseStrategy(ABC):
 
     def update_params(self, new_params: dict):
         """파라미터를 업데이트합니다."""
-        self.params.update(new_params)
+        self.deep_update(self.params, new_params)
+
+    @staticmethod
+    def deep_update(source: dict, overrides: dict) -> dict:
+        """Recursive dict update for nested parameters"""
+        for k, v in overrides.items():
+            if isinstance(v, dict) and k in source and isinstance(source[k], dict):
+                BaseStrategy.deep_update(source[k], v)
+            else:
+                source[k] = v
+        return source

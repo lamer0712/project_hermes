@@ -14,7 +14,7 @@ class MeanReversionStrategy(BaseStrategy):
         default_params = self.get_default_params()
 
         if params:
-            default_params.update(params)
+            self.deep_update(default_params, params)
 
         super().__init__("MeanReversion", default_params)
 

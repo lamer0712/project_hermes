@@ -24,6 +24,7 @@ from src.communication.telegram_listener import run_telegram_listener
 from src.data.upbit_websocket import UpbitWebSocketClient
 
 from src.communication.command_handler import CommandQueueHandler
+from src.optimization.optimizer import StrategyOptimizer
 from src.utils.logger import logger
 
 # 코인 대상 티커 설정 (동적으로 업데이트됨)
@@ -178,6 +179,20 @@ def execute_daily_sync(pm, manager, notifier):
     except Exception as e:
         logger.error(f"Daily sync error: {e}")
 
+def execute_weekly_optimization(manager):
+    """매주 일요일 자정에 전략 파라미터 및 매핑 최적화를 수행합니다."""
+    logger.info("--- [System] Running Weekly Strategy Optimization ---")
+    try:
+        optimizer = StrategyOptimizer(days=7)
+        # 현재 매니저를 전달하여 베이스라인(현재 성과)과 비교 수행
+        optimizer.optimize(current_manager=manager)
+        
+        # 최적화 결과는 data/pending_optimized_params.json에 저장되며, 
+        # 사용자가 텔레그램에서 '승인' 버튼을 누를 때까지 실제 시스템에는 반영되지 않습니다.
+        logger.info("[System] 전략 최적화 및 제안 리포트 생성 완료 (사용자 승인 대기)")
+    except Exception as e:
+        logger.error(f"[System] Weekly optimization error: {e}")
+
 
 def acquire_single_instance_lock():
     lock_file = os.path.join(
@@ -272,6 +287,9 @@ def main():
     schedule.every().day.at("00:00").do(
         execute_daily_sync, pm=pm, manager=manager, notifier=notifier
     )
+
+    # 매주 일요일 자정 전략 최적화 (KST 선호 시 ZoneInfo 고려 필요하나 우선 서버 타임 기준)
+    schedule.every().sunday.at("00:00").do(execute_weekly_optimization, manager=manager)
 
     # 텔레그램 명령 큐 처리 (2초마다)
     command_handler = CommandQueueHandler(pm, manager, notifier)

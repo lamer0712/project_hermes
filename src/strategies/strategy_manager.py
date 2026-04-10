@@ -11,6 +11,7 @@ from src.strategies.panic import PanicStrategy
 from src.strategies.vwap_reversion import VWAPReversionStrategy
 from src.strategies.opening_scalp import OpeningScalpStrategy
 from src.strategies.bollinger_squeeze import BollingerSqueezeStrategy
+import os
 
 class StrategyManager:
     """
@@ -32,9 +33,26 @@ class StrategyManager:
         self.register("BollingerSqueeze", BollingerSqueezeStrategy)
 
 
-    def __init__(self):
+    def __init__(self, config_path: str = "data/optimized_params.json"):
         self._registry: dict[str, tuple[type, dict]] = {}
+        self.config_path = config_path
+        self.optimized_params = {}
+        self.optimized_strategy_map = {}
+        
         self._register_defaults()
+        self.load_optimized_config()
+
+    def load_optimized_config(self):
+        """저장된 최적화 파라미터 및 전략 맵을 로드합니다."""
+        if os.path.exists(self.config_path):
+            try:
+                with open(self.config_path, "r") as f:
+                    config = json.load(f)
+                    self.optimized_params = config.get("strategy_params", {})
+                    self.optimized_strategy_map = config.get("strategy_map", {})
+                    logger.info(f"[StrategyManager] 최적화 설정 로드 완료: {len(self.optimized_params)}건, 맵 {len(self.optimized_strategy_map)}건")
+            except Exception as e:
+                logger.error(f"[StrategyManager] 설정 로드 실패: {e}")
 
     def register(self, key: str, strategy_cls: type, default_params: dict = None):
         """
@@ -70,7 +88,15 @@ class StrategyManager:
             return None
 
         strategy_cls, default_params = entry
-        final_params = params if params else default_params
+        
+        # 최적화된 파라미터가 있으면 우선 사용
+        opt_params = self.optimized_params.get(key)
+        if params is None and opt_params:
+            final_params = opt_params
+            # logger.info(f"[StrategyManager] {key} 전략에 최적화된 파라미터 적용 중...")
+        else:
+            final_params = params if params is not None else default_params
+            
         return strategy_cls(final_params) if final_params else strategy_cls()
 
     def list_strategies(self) -> list[str]:

@@ -191,6 +191,13 @@ async def cmd_analytics(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     CommandQueue.push("analytics", {})
 
+async def cmd_optimize(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    chat_id = str(update.effective_chat.id)
+    if chat_id != AUTHORIZED_CHAT_ID:
+        return
+
+    CommandQueue.push("optimize", {})
+
 
 async def unknown_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """지정되지 않은 명령어를 처리합니다."""
@@ -311,6 +318,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 /eval [코인심볼] — 특정 코인의 최신 전략 및 시그널 상태를 조회합니다
 /report — 전략별 수익률 리포트를 조회합니다
 /analytics — 심화 성과 분석 및 그래프 리포트를 조회합니다
+/optimize — 최근 시장 기반 전략 파라미터 및 매핑 최적화를 실행합니다
 
 명령어 이외의 대화는 Manager Agent가 자연어로 답변합니다!"""
     await context.bot.send_message(chat_id=update.effective_chat.id, text=help_text)
@@ -388,8 +396,18 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
     await query.answer()  # 버튼 클릭 피드백 (로딩 스피너 종료)
 
     callback_data = query.data
-    pending = _pending_confirm.pop(chat_id, None)
+    
+    # 1. 고정 콜백 처리 (최적화 승인 등)
+    if callback_data == "confirm_opt":
+        CommandQueue.push("apply_optimize", {})
+        await query.edit_message_text("✅ 최적화 적용 명령을 전송했습니다. 잠시 후 반영됩니다.")
+        return
+    elif callback_data == "cancel_opt":
+        await query.edit_message_text("❌ 최적화 적용이 취소되었습니다.")
+        return
 
+    # 2. 대기 중인 확인 요청 처리
+    pending = _pending_confirm.pop(chat_id, None)
     if not pending:
         await query.edit_message_text("❌ 만료되었거나 이미 처리된 요청입니다.")
         return
@@ -526,6 +544,7 @@ async def post_init(application):
         BotCommand("status", "전체 포트폴리오 현황 조회"),
         BotCommand("report", "전략별 수익률 보고서 조회"),
         BotCommand("analytics", "심화 성과 분석 및 그래프 조회"),
+        BotCommand("optimize", "전략 파라미터 및 매핑 최적화 실행"),
         BotCommand("eval", "특정 코인 전략 분석 조회"),
         BotCommand("liquidate", "특정 코인 시장가 청산"),
         BotCommand("sync", "업비트 계좌 동기화"),
@@ -561,6 +580,7 @@ def run_telegram_listener():
     application.add_handler(CommandHandler("eval", cmd_eval))
     application.add_handler(CommandHandler("report", cmd_report))
     application.add_handler(CommandHandler("analytics", cmd_analytics))
+    application.add_handler(CommandHandler("optimize", cmd_optimize))
 
     application.add_handler(MessageHandler(filters.COMMAND, unknown_command))
     application.add_handler(CallbackQueryHandler(handle_callback_query))

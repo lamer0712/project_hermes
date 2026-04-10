@@ -66,10 +66,14 @@ class UpbitMarketData(BaseMarketData):
         return adx, plus_di, minus_di
 
     @staticmethod
-    def market_regime():
-        df = UpbitMarketData.get_ohlcv_with_indicators_new(
-            "KRW-BTC", count=100, interval="minutes/60"
-        )
+    def market_regime(df: pd.DataFrame = None):
+        if df is None or len(df) < 10:  # 지표 계산 및 로직 안정성을 위해 최소 10개 확보 필성
+            if df is None:
+                df = UpbitMarketData.get_ohlcv_with_indicators_new(
+                    "KRW-BTC", count=100, interval="minutes/60"
+                )
+            else:
+                return "ranging"
 
         price = df.close.iloc[-1]
         prev_price = df.close.iloc[-2]
@@ -81,25 +85,14 @@ class UpbitMarketData(BaseMarketData):
         ema20 = df.ma_20.iloc[-1]
         ema50 = df.ma_50.iloc[-1]
 
-        # 패닉 덤프
-        if change < -0.04:
-            return "panic"
-
-        # 고변동
-        if volatility > 0.035:
-            return "volatile"
-
-        # 추세
-        if adx > 25:
-            if ema20 > ema50:
-                return "bullish"
-            else:
-                return "bearish"
-
-        return "ranging"
+        # 정교한 판별을 위해 regime_detect 로직 재활용
+        return UpbitMarketData.regime_detect("KRW-BTC", df)
 
     @staticmethod
     def regime_detect(ticker: str, df):
+        if df is None or len(df) < 60:  # ma_60 등 긴 지표가 있으므로 최소 60개 필수
+            return "neutral"
+            
         price = df.close.iloc[-1]
         high20 = df.high_20.iloc[-1]
 

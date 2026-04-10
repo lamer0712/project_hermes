@@ -327,10 +327,10 @@ class ExecutionManager:
             logger.error(f"[ExecutionManager] 실제 잔고 조회 실패: {e}")
 
         if actual_balance <= 0.00000001:
+            context = "Simulation" if getattr(self.broker, "is_mock", False) else "Upbit"
             logger.warning(
-                f"[ExecutionManager] {ticker} 실제 Upbit 잔고가 거의 없음 → 매도 취소"
+                f"[ExecutionManager] {ticker} 실제 {context} 잔고가 거의 없음 → 매도 취소"
             )
-            # 매도할 잔고가 없는데 PM에만 남은 경우, 차기 synchronize_balances 에서 정리하도록 위임
             return
 
         pm_tracked_volume = sell_volume

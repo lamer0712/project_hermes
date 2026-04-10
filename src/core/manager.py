@@ -28,22 +28,14 @@ class ManagerAgent:
     MAX_POSITION_RATIO = 0.45  # 0.40 -> 0.45 (챔피언 출력 상향)
     MAX_POSITIONS = 10         # 8 -> 10 (자본 활용 유연성 극대화)
 
-    # 시장 Regime에 따른 전략 매핑
-    # STRATEGY_MAP = {
-    #     "bullish": ["Breakout", "PullbackTrend"],
-    #     "ranging": ["VWAPReversion", "MeanReversion"],
-    #     "volatile": ["Breakout", "VWAPReversion"],
-    #     # "neutral": ["VWAPReversion", "MeanReversion"],
-    #     # "bearish": ["Bearish"],
-    #     # "panic": ["Panic"],
-    # }
-    STRATEGY_MAP = {
-        "recovery": ["VWAPReversion"],
-        "weakbullish": ["VWAPReversion"],
-        "bullish": ["VWAPReversion"],
-        "earlybreakout": ["VWAPReversion"],
+    # 기본 전략 매핑 (최적화 데이터가 없을 경우 사용)
+    DEFAULT_STRATEGY_MAP = {
+        "bullish": [ "VWAPReversion"],
         "ranging": ["VWAPReversion"],
         "volatile": ["VWAPReversion"],
+        "recovery": ["VWAPReversion"],
+        "weakbullish": ["VWAPReversion"],
+        "earlybreakout": ["VWAPReversion"],
     }
     SELL_COOLDOWN_CYCLES = 8  # 손절 후 8사이클(2시간) 동안 동일 종목 재진입 금지
 
@@ -66,9 +58,11 @@ class ManagerAgent:
         self.breakout_cooldowns = {}   # 실시간 돌파 평가 쿨타임 기록용
         self.sell_cooldowns = {}       # 손절 후 재진입 방지 쿨다운 {ticker: remaining_cycles}
 
-        self.last_ticker_stats = {}
-        self.current_regime = "ranging"  # 실시간 틱 리스크 관리용 장세 저장
         self.breakout_counts = {}  # 종목별 연속 돌파 횟수 관리
+
+        # 시장 상황에 따른 전략 매핑 로드 (최적화 데이터 우선)
+        self.strategy_map = self.strategy_manager.optimized_strategy_map or self.DEFAULT_STRATEGY_MAP
+        logger.info(f"[ManagerAgent] 전략 매핑 로드 완료 (장세 {len(self.strategy_map)}종)")
 
     # ──────────────────────────────────────────────
     # 메인 사이클
@@ -245,7 +239,7 @@ class ManagerAgent:
                 target_strategy_names = [saved_strategy]
 
         if target_strategy_names is None:
-            target_strategy_names = self.STRATEGY_MAP.get(ticker_regime, None)
+            target_strategy_names = self.strategy_map.get(ticker_regime, None)
 
         if target_strategy_names is None:
             return TickerEvaluation(

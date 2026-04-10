@@ -48,13 +48,15 @@ class BollingerSqueezeStrategy(BaseStrategy):
     ) -> Signal:
         holdings, is_held = self.parse_holdings(ticker, portfolio_info)
 
-        if entry_market_data is None or entry_market_data.empty:
-            return Signal(SignalType.HOLD, ticker, "No entry data", 0, 0)
-
         current = entry_market_data.iloc[-1]
         price = float(current.close)
         rsi = float(current.get("rsi_14", 50))
         ma20 = float(current.get("ma_20", price))
+
+        # 0. Data Validation
+        validation_error = self.validate_entry_data(ticker, entry_market_data)
+        if validation_error:
+            return validation_error
 
         # =========================
         # HOLDING -> SELL
@@ -77,33 +79,37 @@ class BollingerSqueezeStrategy(BaseStrategy):
         # =========================
 
         # 1. 1h Setup Check (Squeeze)
-        if setup_market_data is None or setup_market_data.empty:
-            return Signal(SignalType.HOLD, ticker, "No setup data", 0, 0)
+        if setup_market_data is None or len(setup_market_data) < 20:
+            return Signal(SignalType.HOLD, ticker, "Setup data lacking (min 20 candles)", 0, 0)
 
         macro = setup_market_data.iloc[-1]
         bw = float(macro.get("bb_width", 1.0))
 
         # Safe rolling calculation
-        if "bb_width" in setup_market_data.columns:
-            bw_ma = setup_market_data["bb_width"].rolling(20).mean().iloc[-1]
-        else:
-            bw_ma = bw  # Fallback if column still missing
+        bw_series = setup_market_data["bb_width"]
+        bw_ma = bw_series.rolling(20).mean().iloc[-1]
 
-        # Squeeze check: current bandwidth < 20-period avg bandwidth
+        # Squeeze check
+        if pd.isna(bw_ma):
+            bw_ma = bw
+
         is_squeeze = bw < bw_ma * 0.9 or bw < self.params["setup"]["bw_threshold"]
 
         if not is_squeeze:
-            # logger.debug(f"[BollingerSqueeze] {ticker} Not in squeeze: bw={bw:.4f}, bw_ma={bw_ma:.4f}")
             return Signal(SignalType.HOLD, ticker, "Not in squeeze", 0, 0.1)
 
         # 2. Trend Filter (60m)
-        macro_ema20 = float(macro.get("ema_20", price))
-        macro_ema50 = float(macro.get("ema_50", price)) if "ema_50" in macro else price
-        if macro_ema20 < macro_ema50:
+        macro_ema20 = macro.get("ema_20")
+        macro_ema50 = macro.get("ema_50")
+
+        if macro_ema20 is None or macro_ema50 is None:
+            return Signal(SignalType.HOLD, ticker, "Macro indicators missing", 0, 0.1)
+
+        if float(macro_ema20) < float(macro_ema50):
             return Signal(
                 SignalType.HOLD,
                 ticker,
-                f"Macro Downtrend ({macro_ema20:.0f} < {macro_ema50:.0f})",
+                f"Macro Downtrend ({float(macro_ema20):.0f} < {float(macro_ema50):.0f})",
                 0,
                 0.1,
             )
@@ -112,36 +118,42 @@ class BollingerSqueezeStrategy(BaseStrategy):
         bb_upper = float(current.get("bb_upper", price))
         volume = float(current.volume)
         vol_ma = float(current.get("volume_ma20", volume))
+        vol_mult = self.params["entry"]["volume_multiplier"]
 
         is_breakout = price > bb_upper
-        is_high_vol = volume > vol_ma * self.params["entry"]["volume_multiplier"]
+        is_high_vol = volume > vol_ma * vol_mult
+        is_high_rsi = rsi > self.params["entry"]["rsi_threshold"]
 
-        if is_breakout:
-            if not is_high_vol:
-                return Signal(
-                    SignalType.HOLD,
-                    ticker,
-                    f"Breakout but Low Vol ({volume:.0f} < {vol_ma*1.4:.0f})",
-                    0,
-                    0.3,
-                )
-            if rsi <= self.params["entry"]["rsi_threshold"]:
-                return Signal(
-                    SignalType.HOLD, ticker, f"Breakout but Low RSI ({rsi:.1f})", 0, 0.3
-                )
+        if not is_breakout:
+            return Signal(SignalType.HOLD, ticker, "Wait for breakout", 0, 0.2)
 
-        # 4. 🔥 Bullish Confirmation (15m 종가 양봉 혹은 긴 밑꼬리)
+        # 4. Filter Breakout Quality
+        if not is_high_vol:
+            return Signal(
+                SignalType.HOLD,
+                ticker,
+                f"Breakout but Low Vol ({volume:.0f} < {vol_ma * vol_mult:.0f})",
+                0,
+                0.3,
+            )
+
+        if not is_high_rsi:
+            return Signal(
+                SignalType.HOLD, ticker, f"Breakout but Low RSI ({rsi:.1f})", 0, 0.3
+            )
+
+        # 5. 🔥 Bullish Confirmation (15m 종가 양봉 혹은 긴 밑꼬리)
         if not self.is_bullish_candle(entry_market_data):
             return Signal(SignalType.HOLD, ticker, "진입대기 - 양봉/밑꼬리 컨펌 부족", 0, 0.4)
 
-        if is_breakout and is_high_vol and rsi > self.params["entry"]["rsi_threshold"]:
-            reasons = ["BB Squeeze Breakout", "High Volume", f"RSI={rsi:.1f}"]
-            return Signal(
-                SignalType.BUY,
-                ticker,
-                " | ".join(reasons),
-                self.params["position_size_ratio"],
-                0.8,
-            )
+        # 6. ✅ Final Approval
+        reasons = ["BB Squeeze Breakout", "High Volume", f"RSI={rsi:.1f}"]
+        return Signal(
+            SignalType.BUY,
+            ticker,
+            " | ".join(reasons),
+            self.params["position_size_ratio"],
+            0.8,
+        )
 
         return Signal(SignalType.HOLD, ticker, "Wait for breakout", 0, 0.2)
