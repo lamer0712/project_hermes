@@ -7,6 +7,8 @@ import traceback
 from src.communication.command_queue import CommandQueue
 from src.broker.broker_api import UpbitBroker
 from src.data.strategy_report import generate_report
+from src.core.analytics import TradeAnalytics
+from src.utils.visualizer import Visualizer
 from src.utils.logger import logger
 
 
@@ -37,6 +39,7 @@ class CommandQueueHandler:
             "clear": self._handle_clear,
             "eval": self._handle_eval,
             "report": self._handle_report,
+            "analytics": self._handle_analytics,
         }
 
     def process(self):
@@ -153,6 +156,57 @@ class CommandQueueHandler:
         except Exception as e:
             logger.error(f"[Command Queue] 리포트 생성 오류: {e}")
             self.notifier.send_message(f"❌ 리포트 생성 실패: {e}")
+
+    def _handle_analytics(self, params):
+        """심화 성과 분석 리포트 및 그래프를 생성하여 전송합니다."""
+        agent_name = self.manager.name
+        analytics = TradeAnalytics()
+        visualizer = Visualizer()
+        
+        # self.notifier.send_message(f"📊 *[{agent_name}] 성과 분석 데이터를 생성 중입니다...*")
+        
+        try:
+            # 1. 집계 데이터 가져오기
+            stats = analytics.get_strategy_performance(agent_name)
+            equity_df = analytics.get_equity_curve_data(agent_name, days=7)
+            
+            # 2. 요약 메시지 작성
+            msg = f"📈 *심화 성과 분석 리포트 ({agent_name})*\n"
+            msg += f"> 분석 기간: 최근 7일\n\n"
+            
+            if stats.empty:
+                msg += "❌ 아직 분석할 충분한 매매 기록이 없습니다."
+                self.notifier.send_message(msg)
+            else:
+                msg += "*[전략별 요약]*\n"
+                for strat, row in stats.iterrows():
+                    msg += f"• *{strat}*\n"
+                    msg += f"  - 수익: {row['total_profit']:+,.0f}원 (승률 {row['win_rate']:.1f}%)\n"
+                    msg += f"  - PF: {row['profit_factor']:.2f} | 평균보유: {row['avg_hold_min']:.1f}분\n"
+                
+                self.notifier.send_message(msg)
+                
+                # 3. 그래프 생성 및 전송
+                # Equity Curve
+                if not equity_df.empty:
+                    chart_path = visualizer.draw_equity_curve(equity_df, agent_name)
+                    if chart_path:
+                        self.notifier.send_photo(chart_path, caption="📈 자산 성장 곡선 (Equity Curve)")
+                
+                # Strategy Performance Bar
+                chart_path2 = visualizer.draw_strategy_performance(stats, agent_name)
+                if chart_path2:
+                    self.notifier.send_photo(chart_path2, caption="💰 전략별 누적 수익금")
+                
+                # Efficiency Analysis
+                chart_path3 = visualizer.draw_win_rate_analysis(stats, agent_name)
+                if chart_path3:
+                    self.notifier.send_photo(chart_path3, caption="🎯 전략 효율성 분석 (Win Rate & PF)")
+                    
+        except Exception as e:
+            traceback.print_exc()
+            logger.error(f"[Command Queue] Analytics 생성 오류: {e}")
+            self.notifier.send_message(f"❌ 분석 리포트 생성 실패: {e}")
 
     def _handle_eval(self, params):
         """특정 티커의 가장 최근 평가 결과를 전송합니다."""

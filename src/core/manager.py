@@ -213,7 +213,7 @@ class ManagerAgent:
                 log = f"⚡[Risk Manager]\n{risk_signal_str}"
                 logger.warning(log)
                 self.execution_manager.execute_sell(
-                    self.name, ticker, current_price, risk_signal
+                    self.name, ticker, current_price, risk_signal, regime=ctx.market_regime
                 )
                 # 손절인 경우 쿨다운 등록 (재진입 방지)
                 if "손절" in risk_signal.reason or "동적 손절" in risk_signal.reason:
@@ -339,7 +339,7 @@ class ManagerAgent:
                     f" - Strategy : {evaluation.strategy}\n\t{sig_str}"
                 )
                 self.execution_manager.execute_sell(
-                    self.name, ticker, current_price, signal
+                    self.name, ticker, current_price, signal, regime=ctx.market_regime
                 )
 
             # BUY 시그널은 후보로 수집
@@ -419,6 +419,7 @@ class ManagerAgent:
                 self.risk_manager.risk_params,
                 atr=atr,
                 strategy_name=cand_strategy.name,
+                regime=ctx.market_regime,
             )
 
             if success:
@@ -447,11 +448,19 @@ class ManagerAgent:
                 if t not in current_prices:
                     current_prices[t] = p
 
-            self._send_cycle_report(ctx, ticker_stats, current_prices=current_prices)
+            # 포트폴리오 스냅샷 기록
             if self.portfolio_manager:
+                self.portfolio_manager.save_state()
+                self.portfolio_manager.record_snapshot(
+                    self.name,
+                    self.portfolio_manager.get_total_value(self.name),
+                    self.portfolio_manager.get_available_cash(self.name),
+                )
                 self.portfolio_manager.export_portfolio_report(
                     self.name, current_prices=current_prices
                 )
+
+            self._send_cycle_report(ctx, ticker_stats, current_prices=current_prices)
         except Exception as e:
             logger.error(f"Failed to send cycle report or export portfolio: {e}")
 

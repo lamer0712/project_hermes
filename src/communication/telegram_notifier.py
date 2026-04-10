@@ -24,6 +24,7 @@ class TelegramNotifier:
         self.bot_token = os.environ.get("TELEGRAM_BOT_TOKEN")
         self.chat_id = os.environ.get("TELEGRAM_CHAT_ID")
         self.api_url = f"https://api.telegram.org/bot{self.bot_token}/sendMessage"
+        self.photo_url = f"https://api.telegram.org/bot{self.bot_token}/sendPhoto"
         self.is_buffering = False
         self.message_buffer = []
 
@@ -133,6 +134,30 @@ class TelegramNotifier:
                 return False
         except requests.exceptions.RequestException as e:
             print(f"[Telegram Error] 메시지 전송 실패: {e}")
+            return False
+
+    def send_photo(self, photo_path: str, caption: str = "") -> bool:
+        """주어진 경로의 이미지를 텔레그램으로 전송합니다."""
+        if not self.is_configured():
+            return False
+
+        if not os.path.exists(photo_path):
+            print(f"[Telegram Error] 파일을 찾을 수 없습니다: {photo_path}")
+            return False
+
+        try:
+            with open(photo_path, 'rb') as photo:
+                files = {'photo': photo}
+                data = {
+                    'chat_id': self.chat_id,
+                    'caption': caption,
+                    'parse_mode': 'Markdown'
+                }
+                response = self.session.post(self.photo_url, data=data, files=files, timeout=10)
+                response.raise_for_status()
+                return True
+        except Exception as e:
+            print(f"[Telegram Error] 사진 전송 실패: {e}")
             return False
 
 

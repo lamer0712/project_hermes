@@ -18,7 +18,7 @@ class ExecutionManager:
         self.broker = broker
         self.portfolio_manager = portfolio_manager
         self.notifier = notifier
-        # pending_orders 구조: { "uuid": {"type": "buy"|"sell", "agent_name": .., "ticker": .., "current_price": .., "atr": .., "strategy_name": .., "volume": ..} }
+        # pending_orders 구조: { "uuid": {"type": "buy"|"sell", "agent_name": .., "ticker": .., "current_price": .., "atr": .., "strategy_name": .., "volume": .., "regime": ..} }
         self.pending_orders = {}
         self._lock = threading.Lock()
 
@@ -89,6 +89,7 @@ class ExecutionManager:
                                 executed_funds=executed_funds,
                                 paid_fee=paid_fee,
                                 strategy=strategy_name,
+                                regime=order_data.get("regime", "Unknown"),
                             )
                             if atr > 0:
                                 self.portfolio_manager.update_holding_metadata(
@@ -128,6 +129,7 @@ class ExecutionManager:
                                 price=current_price,
                                 executed_funds=executed_funds,
                                 paid_fee=paid_fee,
+                                regime=order_data.get("regime", "Unknown"),
                             )
                             if msg and isinstance(msg, str):
                                 trade_msgs.append(f"{msg}\n  └ 사유: {reason}")
@@ -155,6 +157,7 @@ class ExecutionManager:
         risk_manager_params: dict,
         atr: float = 0.0,
         strategy_name: str = "Unknown",
+        regime: str = "Unknown",
     ) -> bool:
         """비동기 매수 실행 (성공 시 True, 기각 시 False 반환)"""
         if not self.broker.is_configured():
@@ -260,13 +263,14 @@ class ExecutionManager:
                     "volume": order_amount / current_price,  # fallback obj
                     "reason": signal.reason if hasattr(signal, "reason") else "",
                     "fixed_sl_pct": stop_loss_pct,
+                    "regime": regime,
                 }
                 return True
 
         return False
 
     def execute_sell(
-        self, agent_name: str, ticker: str, current_price: float, signal
+        self, agent_name: str, ticker: str, current_price: float, signal, regime: str = "Unknown"
     ) -> None:
         """비동기 매도 실행"""
         if not self.broker.is_configured():
@@ -356,4 +360,5 @@ class ExecutionManager:
                     "pm_tracked_volume": pm_tracked_volume,
                     "volume": sell_volume,
                     "reason": signal.reason if hasattr(signal, "reason") else "",
+                    "regime": regime,
                 }
