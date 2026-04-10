@@ -17,11 +17,12 @@ from dotenv import load_dotenv
 dotenv_path = os.path.join(project_root, ".env")
 load_dotenv(dotenv_path)
 
-from telegram import Update
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, BotCommand
 from telegram.ext import (
     ApplicationBuilder,
     CommandHandler,
     MessageHandler,
+    CallbackQueryHandler,
     filters,
     ContextTypes,
 )
@@ -65,9 +66,18 @@ async def cmd_restart(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "commands": [],
         "params": {},
     }
+    keyboard = [
+        [
+            InlineKeyboardButton("✅ 승인", callback_data="confirm"),
+            InlineKeyboardButton("❌ 취소", callback_data="cancel"),
+        ]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+
     await context.bot.send_message(
         chat_id=chat_id,
-        text="🔄 시스템을 재시작하시겠습니까?\n\n'확인' 또는 '취소'로 응답해주세요.",
+        text="🔄 시스템을 재시작하시겠습니까?",
+        reply_markup=reply_markup,
     )
 
 
@@ -80,9 +90,18 @@ async def cmd_sync(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "commands": ["sync"],
         "params": {},
     }
+    keyboard = [
+        [
+            InlineKeyboardButton("✅ 승인", callback_data="confirm"),
+            InlineKeyboardButton("❌ 취소", callback_data="cancel"),
+        ]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+
     await context.bot.send_message(
         chat_id=chat_id,
-        text="📋 동기화를 실행하고 시스템을 재시작합니다.\n\n'확인' 또는 '취소'로 응답해주세요.",
+        text="📋 동기화를 실행하고 시스템을 재시작합니다.",
+        reply_markup=reply_markup,
     )
 
 
@@ -95,9 +114,18 @@ async def cmd_kill_process(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "commands": ["kill"],
         "params": {},
     }
+    keyboard = [
+        [
+            InlineKeyboardButton("✅ 종료 실행", callback_data="confirm"),
+            InlineKeyboardButton("❌ 취소", callback_data="cancel"),
+        ]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+
     await context.bot.send_message(
         chat_id=chat_id,
-        text="⚠️ 시스템(main.py)을 완전히 종료하시겠습니까?\n이 명령을 실행하면 프로세스가 종료되어 자동 매매가 중단됩니다.\n\n'확인' 또는 '취소'로 응답해주세요.",
+        text="⚠️ 시스템(main.py)을 완전히 종료하시겠습니까?\n이 명령을 실행하면 프로세스가 종료되어 자동 매매가 중단됩니다.",
+        reply_markup=reply_markup,
     )
 
 
@@ -177,9 +205,18 @@ async def cmd_halt(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "commands": ["halt"],
         "params": {},
     }
+    keyboard = [
+        [
+            InlineKeyboardButton("✅ 중지 실행", callback_data="confirm"),
+            InlineKeyboardButton("❌ 취소", callback_data="cancel"),
+        ]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+
     await context.bot.send_message(
         chat_id=chat_id,
-        text=f"⚠️ 모든 거래를 중지하시겠습니까?\n\n'확인' 또는 '취소'로 응답해주세요.",
+        text="⚠️ 모든 거래를 중지하시겠습니까?",
+        reply_markup=reply_markup,
     )
 
 
@@ -193,9 +230,18 @@ async def cmd_resume(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "commands": ["resume"],
         "params": {},
     }
+    keyboard = [
+        [
+            InlineKeyboardButton("✅ 재개 실행", callback_data="confirm"),
+            InlineKeyboardButton("❌ 취소", callback_data="cancel"),
+        ]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+
     await context.bot.send_message(
         chat_id=chat_id,
-        text=f"✅ 모든 거래를 재개하시겠습니까?\n\n'확인' 또는 '취소'로 응답해주세요.",
+        text="✅ 모든 거래를 재개하시겠습니까?",
+        reply_markup=reply_markup,
     )
 
 
@@ -208,9 +254,18 @@ async def cmd_clear(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "commands": ["clear"],
         "params": {},
     }
+    keyboard = [
+        [
+            InlineKeyboardButton("✅ 정리 실행", callback_data="confirm"),
+            InlineKeyboardButton("❌ 취소", callback_data="cancel"),
+        ]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+
     await context.bot.send_message(
         chat_id=chat_id,
-        text="🧹 시스템 로그(*.log)를 정리하시겠습니까?\n\n'확인' 또는 '취소'로 응답해주세요.",
+        text="🧹 시스템 로그(*.log)를 정리하시겠습니까?",
+        reply_markup=reply_markup,
     )
 
 
@@ -311,10 +366,63 @@ CONFIRM_WORDS = {"확인", "네", "yes", "y", "ㅇ", "응", "ok", "ㅇㅇ"}
 CANCEL_WORDS = {"취소", "아니", "no", "n", "ㄴ", "아니요", "cancel"}
 
 
+async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """인라인 버튼 클릭을 처리합니다."""
+    query = update.callback_query
+    chat_id = str(query.message.chat_id)
+
+    # 보안 체크
+    if chat_id != AUTHORIZED_CHAT_ID:
+        await query.answer("Unauthorized.", show_alert=True)
+        return
+
+    await query.answer()  # 버튼 클릭 피드백 (로딩 스피너 종료)
+
+    callback_data = query.data
+    pending = _pending_confirm.pop(chat_id, None)
+
+    if not pending:
+        await query.edit_message_text("❌ 만료되었거나 이미 처리된 요청입니다.")
+        return
+
+    if callback_data == "confirm":
+        action = pending["action"]
+        commands = pending.get("commands", [])
+        params = pending.get("params", {})
+        result_text = ""
+
+        if action == "restart_only":
+            CommandQueue.push("restart", {})
+            result_text = "🔄 재시작 명령을 전송했습니다. 시스템이 곧 재시작됩니다..."
+
+        elif action == "kill_main":
+            CommandQueue.push("kill", {})
+            result_text = "🛑 시스템 종료 명령을 전송했습니다. 프로세스가 곧 종료됩니다..."
+
+        elif action == "execute_and_restart":
+            for cmd in commands:
+                if cmd != "restart":
+                    CommandQueue.push(cmd, params)
+            CommandQueue.push("restart", {})
+            cmd_desc = ", ".join(commands)
+            result_text = f"✅ 명령 접수 완료: {cmd_desc}\n🔄 실행 후 시스템이 재시작됩니다..."
+
+        elif action == "execute_only":
+            for cmd in commands:
+                CommandQueue.push(cmd, params)
+            cmd_desc = ", ".join(commands)
+            result_text = f"✅ 명령 접수 완료: {cmd_desc}\n⌛ 시스템에 반영합니다..."
+
+        await query.edit_message_text(f"🏁 **{result_text}**", parse_mode="Markdown")
+
+    elif callback_data == "cancel":
+        await query.edit_message_text("❌ 명령이 취소되었습니다.")
+
+
 async def handle_confirm_response(
     update: Update, context: ContextTypes.DEFAULT_TYPE, user_text: str
 ):
-    """확인/취소 응답을 처리합니다."""
+    """텍스트 기반 확인/취소 응답을 처리합니다 (하위 호환성 유지)."""
     chat_id = str(update.effective_chat.id)
     pending = _pending_confirm.pop(chat_id, None)
 
@@ -403,6 +511,24 @@ async def handle_agent_select_response(
     pass
 
 
+async def post_init(application):
+    """애플리케이션 초기화 후 봇 명령 리스트를 설정합니다."""
+    commands = [
+        BotCommand("status", "전체 포트폴리오 현황 조회"),
+        BotCommand("report", "전략별 수익률 보고서 조회"),
+        BotCommand("eval", "특정 코인 전략 분석 조회"),
+        BotCommand("liquidate", "특정 코인 시장가 청산"),
+        BotCommand("sync", "업비트 계좌 동기화"),
+        BotCommand("clear", "로그 정리"),
+        BotCommand("halt", "전체 거래 일시 중지"),
+        BotCommand("resume", "전체 거래 재개"),
+        BotCommand("restart", "시스템 재시작"),
+        BotCommand("kill", "시스템 강제 종료"),
+    ]
+    await application.bot.set_my_commands(commands)
+    logger.info("Telegram Bot Commands updated successfully.")
+
+
 def run_telegram_listener():
     bot_token = os.environ.get("TELEGRAM_BOT_TOKEN")
     if not bot_token or not AUTHORIZED_CHAT_ID:
@@ -410,7 +536,7 @@ def run_telegram_listener():
         return
 
     logger.info("Starting Telegram Listener...")
-    application = ApplicationBuilder().token(bot_token).build()
+    application = ApplicationBuilder().token(bot_token).post_init(post_init).build()
 
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("help", help_command))
@@ -426,6 +552,7 @@ def run_telegram_listener():
     application.add_handler(CommandHandler("report", cmd_report))
 
     application.add_handler(MessageHandler(filters.COMMAND, unknown_command))
+    application.add_handler(CallbackQueryHandler(handle_callback_query))
     application.add_handler(
         MessageHandler(filters.TEXT & (~filters.COMMAND), handle_message)
     )

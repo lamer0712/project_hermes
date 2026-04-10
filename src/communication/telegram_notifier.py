@@ -74,7 +74,7 @@ class TelegramNotifier:
         else:
             return self._send_http(combined_text)
 
-    def send_message(self, text: str) -> bool:
+    def send_message(self, text: str, reply_markup: dict = None) -> bool:
         """
         주어진 텍스트를 설정된 텔레그램 채팅방으로 전송합니다.
         버퍼링 모드(is_buffering) 동작 시 리스트에 담아둡니다.
@@ -86,9 +86,9 @@ class TelegramNotifier:
                 self.message_buffer.append(text)
             return True
 
-        return self._send_http(text)
+        return self._send_http(text, reply_markup=reply_markup)
 
-    def _send_http(self, text: str) -> bool:
+    def _send_http(self, text: str, reply_markup: dict = None) -> bool:
         if not self.is_configured():
             print(
                 "[Telegram Warning] TELEGRAM_BOT_TOKEN 또는 TELEGRAM_CHAT_ID가 설정되지 않았습니다. 알림을 생략합니다."
@@ -100,6 +100,8 @@ class TelegramNotifier:
             "text": text,
             "parse_mode": "Markdown",  # 마크다운 포맷 지원
         }
+        if reply_markup:
+            payload["reply_markup"] = reply_markup
 
         try:
             # 설정된 세션을 사용하여 재시도 로직 적용
