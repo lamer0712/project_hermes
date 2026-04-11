@@ -117,11 +117,17 @@ class RiskManager:
             self.portfolio_manager.update_holding_metadata(agent_name, ticker, hit_tp_level="First_TP_Stage") #Todo 실제 매도후 업데이트 하도록 변경
             return Signal(SignalType.SELL, ticker, reason, 0.5, 1.0)
 
-        # 2-2. 트레일링 스탑 (수익 보존)
+        # 2-2. 트레일링 스탑 (수익 보존 + 다이나믹 조이기)
         if max_profit_pct >= trailing_start_pct:
             drawdown_from_max = ((current_price - max_price) / max_price * 100.0) if max_price > 0 else 0
-            if drawdown_from_max <= -abs(trailing_stop_pct):
-                reason = f"🔒 트레일링 스탑 [{market_regime}]: 수익률 {profit_pct:.2f}%, 최고점({max_profit_pct:.2f}%) 대비 {drawdown_from_max:.2f}% 하락"
+            
+            # [수익 극대화] 1차 익절(50%)을 마쳐 보너스 홀딩 중이라면 잔파도를 버티지 않고 타이트하게 조임
+            dynamic_stop_pct = trailing_stop_pct
+            if "First_TP_Stage" in tp_levels_hit:
+                dynamic_stop_pct = dynamic_stop_pct * 0.5
+                
+            if drawdown_from_max <= -abs(dynamic_stop_pct):
+                reason = f"🔒 트레일링 스탑 [{market_regime}]: 수익률 {profit_pct:.2f}%, 최고점({max_profit_pct:.2f}%) 대비 {drawdown_from_max:.2f}% 하락 (조임 적용)"
                 return Signal(SignalType.SELL, ticker, reason, 1.0, 1.0)
 
         # 2-3. 본절 보호 (Break-even)

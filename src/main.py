@@ -256,7 +256,7 @@ def main():
     ws_tickers = list(set(TARGET_COINS + held_coins))
 
     ws_client = UpbitWebSocketClient(
-        tickers=ws_tickers, callbacks=[]  # [manager.handle_realtime_tick]
+        tickers=ws_tickers, callbacks=[manager.handle_realtime_tick]
     )
     ws_client.start()
 
@@ -288,8 +288,8 @@ def main():
         execute_daily_sync, pm=pm, manager=manager, notifier=notifier
     )
 
-    # 매주 일요일 자정 전략 최적화 (KST 선호 시 ZoneInfo 고려 필요하나 우선 서버 타임 기준)
-    schedule.every().sunday.at("00:00").do(execute_weekly_optimization, manager=manager)
+    # 매주 일요일 자정 전략 최적화 (단일 스레드 마비 방지를 위해 executor 활용 background 수행)
+    schedule.every().sunday.at("00:00").do(lambda: executor.submit(execute_weekly_optimization, manager))
 
     # 텔레그램 명령 큐 처리 (2초마다)
     command_handler = CommandQueueHandler(pm, manager, notifier)

@@ -676,7 +676,7 @@ class ManagerAgent:
                     self._execute_early_buy(ticker, current_price)
 
     def _execute_early_buy(self, ticker: str, current_price: float):
-        """실시간 돌파 감지 시 즉시 평가 및 매수를 시도합니다."""
+        """실시간 돌파 감지 시 즉시 알림을 전송합니다 (자동 매수 비활성화)."""
         # 연속 돌파 카운팅
         count = self.breakout_counts.get(ticker, 0) + 1
         self.breakout_counts[ticker] = count
@@ -691,61 +691,5 @@ class ManagerAgent:
             f"🔥 [Realtime Breakout] {ticker} 돌파 감지! ({count}회차, Price: {current_price:,.0f})"
         )
 
-        # 실시간 평가를 위해 필요한 데이터(15분/60분 봉 + 지표) 가져오기
-        # setup_df = UpbitMarketData.get_ohlcv_with_indicators_new(
-        #     ticker, count=100, interval="minutes/60", current_price=current_price
-        # )
-        entry_df = UpbitMarketData.get_ohlcv_with_indicators_new(
-            ticker, count=100, interval="minutes/15", current_price=current_price
-        )
-        if entry_df is None or entry_df.empty:
-            return
-
-        # 1. 컨텍스트 구성 (단일 종목용, 실시간 돌파는 변동성 장세로 가정)
-
-        ctx = self._build_cycle_context({ticker: entry_df}, "volatile")
-
-        # 2. 돌파 전략(Breakout) 직접 평가
-        strategy = self.strategy_manager.get_strategy("Breakout")
-        if not strategy:
-            return
-
-        self.notifier.start_buffering()
-
-        signal = strategy.evaluate(ticker, None, entry_df, ctx.portfolio_info)
-
-        # TickerEvaluation 기록 (finalize_cycle에서 사용)
-        ctx.ticker_stats[ticker] = TickerEvaluation(
-            ticker=ticker,
-            regime="volatile",
-            strategy=strategy.name,
-            signal_type=signal.type.value,
-            signal_reason=signal.reason,
-            signal_strength=signal.strength,
-            signal_confidence=signal.confidence,
-            current_price=current_price,
-        )
-
-        if signal.type == SignalType.BUY:
-            if not ctx.buy_filter_passed or ctx.available_cash < self.MIN_ORDER_AMOUNT:
-                logger.info(
-                    f"⏸️ [Realtime] {ticker} 매수 조건은 맞으나 필터링 혹은 잔고 부족으로 보류"
-                )
-                self.notifier.discard_buffer()
-            else:
-                ctx.buy_candidates.append((signal, strategy, entry_df))
-                self._select_and_execute_buy(ctx)
-
-                # 매수 성공 시 감시 목록 및 카운트 제거
-                self.breakout_counts.pop(ticker, None)
-                holdings = self.portfolio_manager.get_holdings(self.name)
-                if ticker in holdings and holdings[ticker].get("volume", 0) > 0:
-                    self.breakout_thresholds.pop(ticker, None)
-
-                # 3. 마무리 (리포트 전송 등) - 매수 시도 시에만 전송
-                self._finalize_cycle(ctx, "realtime breakout")
-                self.notifier.flush_buffer()
-        else:
-            self.breakout_thresholds[ticker] = max(self.breakout_thresholds.get(ticker, 0), current_price)
-            logger.info(f"⏸️ [Realtime] 매수 보류: {signal}")
-            self.notifier.discard_buffer()
+        # 다음 돌파 기준선 갱신
+        self.breakout_thresholds[ticker] = max(self.breakout_thresholds.get(ticker, 0), current_price)
